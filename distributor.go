@@ -1,4 +1,6 @@
-package main
+// Author: Vinhthuy Phan, 2014
+
+package disq
 
 import (
    "fmt"
@@ -6,46 +8,69 @@ import (
    "time"
    "os"
    // "flag"
+   "bytes"
    "bufio"
    "strings"
    "strconv"
    "runtime"
 )
 
+
 type Distributor struct {
-   context        *zmq.Context
-   sender         *zmq.Socket
-   receiver       *zmq.Socket
-   publisher      *zmq.Socket
+   context              *zmq.Context
+   init_socket          *zmq.Socket
+   end_pub_socket       *zmq.Socket
+   end_sub_socket       *zmq.Socket
+   query_socket         *zmq.Socket
+   result_socket        *zmq.Socket
    input_count    int
    result_count   int
    data_file      string
    index_file     string
+   DEBUG          bool
 }
 
-func MakeDistributor() *Distributor {
+func NewDistributor() *Distributor {
    d := new(Distributor)
    d.context, _ = zmq.NewContext()
-   d.publisher, _ = d.context.NewSocket(zmq.PUB)
-   d.publisher.Bind("tcp://127.0.0.1:5556")
-   // subscriber won't get (first) message without this delay
-   time.Sleep(500*time.Millisecond)
 
-   d.sender, _ = d.context.NewSocket(zmq.PUSH)
-   d.sender.Bind("tcp://127.0.0.1:5557")
-   d.receiver, _ = d.context.NewSocket(zmq.PULL)
-   d.receiver.Bind("tcp://127.0.0.1:5558")
+   d.init_socket, _ = d.context.NewSocket(zmq.PUB)
+   d.init_socket.Bind("tcp://127.0.0.1:5555")
+
+   d.end_pub_socket, _ = d.context.NewSocket(zmq.PUB)
+   d.end_pub_socket.Bind("tcp://127.0.0.1:5556")
+
+   d.end_sub_socket, _ = d.context.NewSocket(zmq.SUB)
+   d.end_sub_socket.SetSubscribe("")
+   d.end_sub_socket.Connect("tcp://127.0.0.1:5556")
+
+   d.query_socket, _ = d.context.NewSocket(zmq.PUSH)
+   d.query_socket.Bind("tcp://127.0.0.1:5557")
+
+   d.result_socket, _ = d.context.NewSocket(zmq.PULL)
+   d.result_socket.Bind("tcp://127.0.0.1:5558")
    return d
 }
 
-func (d *Distributor) Configure(data_file, index_file string) {
+// -----------------------------------------------------------------------
+func (d *Distributor) Configure(data_file, index_file string, debug_mode bool) {
    d.data_file = data_file
    d.index_file = index_file
-   d.publisher.Send([]byte("I " + data_file + " " + index_file), 0)
-   fmt.Println("Send I", data_file, index_file)
+
+   d.DEBUG = debug_mode
+   if d.DEBUG {
+      fmt.Println("Configure", data_file, index_file)
+   }
+
+   // give some time for subscribers to get message
+   time.Sleep(500*time.Millisecond)
+   msg := fmt.Sprintf("%s %s %t", data_file, index_file, debug_mode)
+   d.init_socket.Send([]byte(msg), 0)
+   time.Sleep(500*time.Millisecond)
 }
 
-func (d *Distributor) Distribute(queries_file string, done_dist chan bool, separator byte) {
+// -----------------------------------------------------------------------
+func (d *Distributor) Distribute(queries_file string) {
    f, err := os.Open(queries_file)
    if err != nil { panic("error opening file " + queries_file) }
    r := bufio.NewReader(f)
@@ -54,62 +79,73 @@ func (d *Distributor) Distribute(queries_file string, done_dist chan bool, separ
 
    err = nil
    var line []byte
+
    for err == nil {
-      line, err = r.ReadBytes(separator)
+      line, err = r.ReadBytes('\n')
+      line = bytes.Trim(line, "\n\r")
       if len(line) > 1 {
          msg := fmt.Sprintf("%d %s", d.input_count, line)
-         d.sender.Send([]byte(msg), 0)
-         fmt.Println("Send", msg)
+         d.query_socket.Send([]byte(msg), 0)
          d.input_count++
+         if d.DEBUG {
+            fmt.Println("Distribute", msg)
+         }
       }
    }
-   done_dist <- true
+
+   d.end_pub_socket.Send([]byte("E"), 0)
+   fmt.Println("Send END message")
 }
 
-func (d *Distributor) CollectResult(done_dist chan bool,  f func (int64, string)) {
-   var done bool = false
+// -----------------------------------------------------------------------
+func (d *Distributor) ProcessResult(processor func (int64, string)) {
    var items []string
    var msg []byte
    var qid int64
    var ans string
-   var err error
+   distribute_all_queries := false
 
-   for ! done || d.result_count < d.input_count {
-      select {
-         case done =<- done_dist: break
-         default: break
-      }
-      msg, err = d.receiver.Recv(0)
-      items = strings.SplitN(string(msg), " ", 2)
-      if items[0] == "ANS" {
-         items = strings.SplitN(items[1], " ", 2)
-         qid, err = strconv.ParseInt(items[0], 10, 64)
-         if err != nil {
-            fmt.Println("Invalid format from worker message.", items)
+   pi := zmq.PollItems{
+      zmq.PollItem{Socket: d.result_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: d.end_sub_socket, Events: zmq.POLLIN},
+   }
+
+   for ! distribute_all_queries || d.result_count < d.input_count {
+      _, _ = zmq.Poll(pi, -1)
+
+      switch {
+      // Receives result from workers.
+      case pi[0].REvents&zmq.POLLIN != 0:
+         msg, _ = pi[0].Socket.Recv(0)
+         items = strings.SplitN(string(msg), " ", 2)
+         if items[0] == "ANS" {
+            items = strings.SplitN(items[1], " ", 2)
+            qid, _ = strconv.ParseInt(items[0], 10, 64)
+            ans = items[1]
+            d.result_count++
+            if d.DEBUG {
+               fmt.Println("Process:", ans)
+            }
+            processor(qid, ans)
+         } else if items[0] == "ERR" {
+            fmt.Println("Error:", items[1])
          }
-         ans = items[1]
-         f(qid, ans)
-         d.result_count++
+
+      // Distribute notifies that all queries have been distributed
+      case pi[1].REvents&zmq.POLLIN != 0:
+         distribute_all_queries = true
+         msg, _ = pi[1].Socket.Recv(0)
+         if d.DEBUG {
+            fmt.Println("Process: all queries have been distributed.")
+         }
       }
    }
 }
 
-func (d *Distributor) Run( f func (int64, string) ) {
-   done_dist := make(chan bool)
-   go d.Distribute("queries.txt", done_dist, '\n')
-   d.CollectResult(done_dist, f)
-}
-
-func main() {
+// -----------------------------------------------------------------------
+func (d *Distributor) Run( processor func (int64, string) ) {
    runtime.GOMAXPROCS(2)
-   simply_print_out := func (qid int64, res string ) {
-      fmt.Println("Got qid", qid, ", and answer:", res)
-   }
-
-   d := MakeDistributor()
-   d.Configure("genome.txt", "genome.index")
-   d.Run(simply_print_out)
-
-   fmt.Println("finished")
-   // time.Sleep(1 * time.Second)
+   go d.Distribute("queries.txt")
+   d.ProcessResult(processor)
 }
+
