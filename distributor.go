@@ -18,31 +18,32 @@ import (
 
 type Distributor struct {
    context              *zmq.Context
-   init_socket          *zmq.Socket
-   end_pub_socket       *zmq.Socket
-   end_sub_socket       *zmq.Socket
+   pub_socket           *zmq.Socket
+   sub_socket           *zmq.Socket
    query_socket         *zmq.Socket
    result_socket        *zmq.Socket
    input_count    int
    result_count   int
    data_file      string
    index_file     string
-   DEBUG          bool
 }
 
 func NewDistributor() *Distributor {
    d := new(Distributor)
    d.context, _ = zmq.NewContext()
 
-   d.init_socket, _ = d.context.NewSocket(zmq.PUB)
-   d.init_socket.Bind("tcp://127.0.0.1:5555")
+   d.pub_socket, _ = d.context.NewSocket(zmq.PUB)
+   d.pub_socket.Bind("tcp://127.0.0.1:5555")
+   d.sub_socket, _ = d.context.NewSocket(zmq.SUB)
+   d.sub_socket.SetSubscribe("")
+   d.sub_socket.Connect("tcp://127.0.0.1:5555")
 
-   d.end_pub_socket, _ = d.context.NewSocket(zmq.PUB)
-   d.end_pub_socket.Bind("tcp://127.0.0.1:5556")
+   // d.end_pub_socket, _ = d.context.NewSocket(zmq.PUB)
+   // d.end_pub_socket.Bind("tcp://127.0.0.1:5556")
 
-   d.end_sub_socket, _ = d.context.NewSocket(zmq.SUB)
-   d.end_sub_socket.SetSubscribe("")
-   d.end_sub_socket.Connect("tcp://127.0.0.1:5556")
+   // d.end_sub_socket, _ = d.context.NewSocket(zmq.SUB)
+   // d.end_sub_socket.SetSubscribe("")
+   // d.end_sub_socket.Connect("tcp://127.0.0.1:5556")
 
    d.query_socket, _ = d.context.NewSocket(zmq.PUSH)
    d.query_socket.Bind("tcp://127.0.0.1:5557")
@@ -57,15 +58,15 @@ func (d *Distributor) Configure(data_file, index_file string, debug_mode bool) {
    d.data_file = data_file
    d.index_file = index_file
 
-   d.DEBUG = debug_mode
-   if d.DEBUG {
+   DEBUG = debug_mode
+   if DEBUG {
       fmt.Println("Configure", data_file, index_file)
    }
 
    // give some time for subscribers to get message
    time.Sleep(500*time.Millisecond)
-   msg := fmt.Sprintf("%s %s %t", data_file, index_file, debug_mode)
-   d.init_socket.Send([]byte(msg), 0)
+   msg := fmt.Sprintf("CONF %s %s %t", data_file, index_file, DEBUG)
+   d.pub_socket.Send([]byte(msg), 0)
    time.Sleep(500*time.Millisecond)
 }
 
@@ -87,13 +88,11 @@ func (d *Distributor) Distribute(queries_file string) {
          msg := fmt.Sprintf("%d %s", d.input_count, line)
          d.query_socket.Send([]byte(msg), 0)
          d.input_count++
-         if d.DEBUG {
-            fmt.Println("Distribute", msg)
-         }
+         if DEBUG { fmt.Println("Distribute", msg) }
       }
    }
 
-   d.end_pub_socket.Send([]byte("E"), 0)
+   d.pub_socket.Send([]byte("END 0 0 0"), 0)
    fmt.Println("Send END message")
 }
 
@@ -107,7 +106,7 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
 
    pi := zmq.PollItems{
       zmq.PollItem{Socket: d.result_socket, Events: zmq.POLLIN},
-      zmq.PollItem{Socket: d.end_sub_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: d.sub_socket, Events: zmq.POLLIN},
    }
 
    for ! distribute_all_queries || d.result_count < d.input_count {
@@ -123,9 +122,7 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
             qid, _ = strconv.ParseInt(items[0], 10, 64)
             ans = items[1]
             d.result_count++
-            if d.DEBUG {
-               fmt.Println("Process:", ans)
-            }
+            if DEBUG { fmt.Println("Process:", ans) }
             processor(qid, ans)
          } else if items[0] == "ERR" {
             fmt.Println("Error:", items[1])
@@ -133,10 +130,11 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
 
       // Distribute notifies that all queries have been distributed
       case pi[1].REvents&zmq.POLLIN != 0:
-         distribute_all_queries = true
          msg, _ = pi[1].Socket.Recv(0)
-         if d.DEBUG {
-            fmt.Println("Process: all queries have been distributed.")
+         items = strings.SplitN(string(msg), " ", 4)
+         if items[0] == "END" {
+            distribute_all_queries = true
+            if DEBUG { fmt.Println("Process: all queries distributed.") }
          }
       }
    }
