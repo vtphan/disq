@@ -76,6 +76,10 @@ func (w *Worker) Run(thing WorkerInterface) {
             result = thing.Process(int(qid), query)
             w.result_socket.Send([]byte(fmt.Sprintf("ANS %d %s", qid,result)), 0)
             if DEBUG { fmt.Println("Query:",qid,query,"\nResult:",result) }
+         } else {
+            w.result_socket.Send([]byte(fmt.Sprintf("ERR %d worker_exits_after_missing_configuration_step",qid)), 0)
+            fmt.Println(qid,"exit after missing configuration step.")
+            return
          }
 
       // initialize index
