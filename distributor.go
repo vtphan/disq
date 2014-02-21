@@ -26,6 +26,7 @@ type Distributor struct {
    result_count   int
    data_file      string
    index_file     string
+   query_file     string
 }
 
 func NewDistributor() *Distributor {
@@ -38,13 +39,6 @@ func NewDistributor() *Distributor {
    d.sub_socket.SetSubscribe("")
    d.sub_socket.Connect("tcp://127.0.0.1:5555")
 
-   // d.end_pub_socket, _ = d.context.NewSocket(zmq.PUB)
-   // d.end_pub_socket.Bind("tcp://127.0.0.1:5556")
-
-   // d.end_sub_socket, _ = d.context.NewSocket(zmq.SUB)
-   // d.end_sub_socket.SetSubscribe("")
-   // d.end_sub_socket.Connect("tcp://127.0.0.1:5556")
-
    d.query_socket, _ = d.context.NewSocket(zmq.PUSH)
    d.query_socket.Bind("tcp://127.0.0.1:5557")
 
@@ -54,9 +48,10 @@ func NewDistributor() *Distributor {
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) Configure(data_file, index_file string, debug_mode bool) {
+func (d *Distributor) Configure(data_file, index_file, query_file string, debug_mode bool) {
    d.data_file = data_file
    d.index_file = index_file
+   d.query_file = query_file
 
    DEBUG = debug_mode
    if DEBUG {
@@ -71,9 +66,9 @@ func (d *Distributor) Configure(data_file, index_file string, debug_mode bool) {
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) Distribute(queries_file string) {
-   f, err := os.Open(queries_file)
-   if err != nil { panic("error opening file " + queries_file) }
+func (d *Distributor) Distribute() {
+   f, err := os.Open(d.query_file)
+   if err != nil { panic("error opening file " + d.query_file) }
    r := bufio.NewReader(f)
    d.input_count = 0
    d.result_count = 0
@@ -143,7 +138,7 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
 // -----------------------------------------------------------------------
 func (d *Distributor) Run( processor func (int64, string) ) {
    runtime.GOMAXPROCS(2)
-   go d.Distribute("queries.txt")
+   go d.Distribute()
    d.ProcessResult(processor)
 }
 
