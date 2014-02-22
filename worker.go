@@ -24,12 +24,14 @@ type Worker struct {
    sub_socket        *zmq.Socket
    query_socket      *zmq.Socket
    result_socket     *zmq.Socket
-   index_file         string
+   index_file        string
+   handle            WorkerInterface
 }
 
 // -----------------------------------------------------------------------
-func NewWorker() *Worker {
+func NewWorker(handle WorkerInterface) *Worker {
    w := new(Worker)
+   w.handle = handle
    w.index_file = ""
    w.context, _ = zmq.NewContext()
    w.sub_socket, _ = w.context.NewSocket(zmq.SUB)
@@ -47,7 +49,7 @@ func NewWorker() *Worker {
 
 
 // -----------------------------------------------------------------------
-func (w *Worker) Run(thing WorkerInterface) {
+func (w *Worker) Run() {
    var msg []byte
    var items []string
    var query, result, data_file, index_file string
@@ -69,15 +71,14 @@ func (w *Worker) Run(thing WorkerInterface) {
             msg, _ = pi[0].Socket.Recv(0)
             items = strings.SplitN(string(msg), " ", 2)
             qid, err = strconv.ParseInt(items[0], 10, 64)
-            if err != nil {
-               w.result_socket.Send([]byte("ERR qid is not an integer"), 0)
-            }
             query = items[1]
-            result = thing.Process(int(qid), query)
-            w.result_socket.Send([]byte(fmt.Sprintf("ANS %d %s", qid,result)), 0)
-            if DEBUG { fmt.Println("Query:",qid,query,"\nResult:",result) }
+            result = w.handle.Process(int(qid), query)
+            w.result_socket.Send([]byte(fmt.Sprintf("%d %s", qid,result)), 0)
+            if DEBUG {
+               fmt.Println("Query:",qid,query,"\nResult:",result)
+            }
          } else {
-            w.result_socket.Send([]byte(fmt.Sprintf("ERR %d worker_exits_after_missing_configuration_step",qid)), 0)
+            w.result_socket.Send([]byte(fmt.Sprintf("-1 SEND_CONF")), 0)
             fmt.Println(qid,"exit after missing configuration step.")
             return
          }
@@ -96,10 +97,10 @@ func (w *Worker) Run(thing WorkerInterface) {
                w.index_file = index_file
                if _, err = os.Stat(index_file); err == nil {
                   if DEBUG { fmt.Println("Loading", index_file) }
-                  thing.Load(index_file)
+                  w.handle.Load(index_file)
                } else if _, err = os.Stat(data_file); err == nil {
                   if DEBUG { fmt.Println("Building from", data_file) }
-                  thing.Build(data_file)
+                  w.handle.Build(data_file)
                } else {
                   w.query_socket.Send([]byte("ERR data/index not found."),0)
                }

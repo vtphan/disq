@@ -112,15 +112,14 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
       case pi[0].REvents&zmq.POLLIN != 0:
          msg, _ = pi[0].Socket.Recv(0)
          items = strings.SplitN(string(msg), " ", 2)
-         if items[0] == "ANS" {
-            items = strings.SplitN(items[1], " ", 2)
-            qid, _ = strconv.ParseInt(items[0], 10, 64)
-            ans = items[1]
+         qid, _ = strconv.ParseInt(items[0], 10, 64)
+         ans = items[1]
+         if qid >= 0 {
             d.result_count++
             if DEBUG { fmt.Println("Process:", ans) }
             processor(qid, ans)
-         } else if items[0] == "ERR" {
-            fmt.Println("Error:", items[1])
+         } else {
+            fmt.Println("Error:", qid, ans)
          }
 
       // Distribute notifies that all queries have been distributed
