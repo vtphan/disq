@@ -2,16 +2,15 @@
 package disq
 
 import (
-   // "fmt"
    "os"
    "encoding/json"
+   // "fmt"
 )
 
 
 var (
    DEBUG = true
    TIMING = false
-   CONFIG_FILE = "config.txt"
    PUBSUB = "127.0.0.1:5555"
 )
 
@@ -32,7 +31,8 @@ type Config struct {
 func ReadConfig(json_file string) (int, int, string, string) {
    file, _ := os.Open(json_file)
    decoder := json.NewDecoder(file)
-   c := &Configuration{}
+   c := &Config{}
    decoder.Decode(&c)
+   // fmt.Println(">", json_file, c)
    return c.Ports[0], c.Ports[1], c.DataPath, c.IndexPath
 }
