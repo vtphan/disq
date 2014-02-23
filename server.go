@@ -4,13 +4,12 @@ package disq
 import (
    "fmt"
    zmq "github.com/alecthomas/gozmq"
-   // "bytes"
    "strings"
-   // "time"
    "os"
    "strconv"
-   // "flag"
-   // "bufio"
+   "flag"
+   // "time"
+   // "bytes"
 )
 
 type ServerInterface interface {
@@ -35,7 +34,9 @@ type Server struct {
 
 // -----------------------------------------------------------------------
 func NewServer(handle ServerInterface) *Server {
-   // var err           error
+   flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
+   flag.Parse()
+
    var items         []string
 
    s := new(Server)
@@ -50,7 +51,7 @@ func NewServer(handle ServerInterface) *Server {
    s.sub_socket, _ = s.context.NewSocket(zmq.SUB)
    s.sub_socket.SetSubscribe("")
    s.sub_socket.Connect(fmt.Sprintf("tcp://%s:%d", s.host, s.pubsub_port))
-
+   fmt.Printf("Server subscribing to tcp://%s:%d\n", s.host,s.pubsub_port)
    return s
 }
 
@@ -79,13 +80,12 @@ func (s *Server) Listen() {
    var err error
 
    msg, _ = s.sub_socket.Recv(0)
-   items = strings.SplitN(string(msg), " ", 6)
+   items = strings.SplitN(string(msg), " ", 5)
    if items[0] == "REQ" {
       s.query_port, _ = strconv.Atoi(items[1])
       s.result_port, _ = strconv.Atoi(items[2])
       data_path = items[3]
       index_path = items[4]
-      DEBUG = (items[5] == "true")
       query_address := fmt.Sprintf("tcp://%s:%d",s.host,s.query_port)
       result_address := fmt.Sprintf("tcp://%s:%d",s.host,s.result_port)
       fmt.Printf("Server push/pull on %s %s\n",query_address,result_address)
@@ -105,9 +105,8 @@ func (s *Server) Listen() {
             s.handle.Build(data_path)
             if DEBUG { fmt.Println("Building from", data_path) }
          } else {
-            s.state = 1
             s.query_socket.Send([]byte("ERR data/index not found."),0)
-            if DEBUG { fmt.Printf("%s and %s not found", data_path,index_path) }
+            fmt.Printf("%s and %s not found", data_path,index_path)
          }
       } else if DEBUG {
          fmt.Println("Skip building & loading index.")

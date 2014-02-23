@@ -12,11 +12,8 @@ import (
    "strings"
    "strconv"
    "runtime"
-   // "flag"
-   // "io/ioutil"
+   "flag"
 )
-
-// flag.BoolVar(&DEBUG, "DEBUG", DEBUG, "turn on debug mode")
 
 type Client struct {
    context              *zmq.Context
@@ -32,7 +29,10 @@ type Client struct {
 // -----------------------------------------------------------------------
 
 func NewClient(config_file string) *Client {
-   // var err           error
+   flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
+   flag.BoolVar(&TIMING, "timing", TIMING, "turn on timing")
+   flag.Parse()
+
    var items         []string
 
    c := new(Client)
@@ -62,7 +62,7 @@ func NewClient(config_file string) *Client {
 func (c *Client) SendRequest() {
    // give some time for subscribers to get message
    time.Sleep(500*time.Millisecond)
-   msg := fmt.Sprintf("REQ %d %d %s %s %t",c.query_port,c.result_port,c.data_path,c.index_path,DEBUG)
+   msg := fmt.Sprintf("REQ %d %d %s %s",c.query_port,c.result_port,c.data_path,c.index_path)
    c.pub_socket.Send([]byte(msg), 0)
    time.Sleep(500*time.Millisecond)
 
@@ -79,10 +79,19 @@ func (c *Client) Close() {
 // -----------------------------------------------------------------------
 
 func (c *Client) Run(query_file string, processor func (int64, string)) {
-   // defer c.Close()
+   var startTime, endTime time.Time
+   if TIMING {
+      startTime = time.Now()
+   }
+   defer c.Close()
    runtime.GOMAXPROCS(2)
    go c.SendQueries(query_file)
    c.ProcessResult(processor)
+
+   if TIMING {
+      endTime = time.Now()
+      fmt.Println("Run time\t", endTime.Sub(startTime))
+   }
 }
 
 // -----------------------------------------------------------------------

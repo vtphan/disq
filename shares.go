@@ -9,7 +9,7 @@ import (
 
 
 var (
-   DEBUG = true
+   DEBUG = false
    TIMING = false
    PUBSUB = "127.0.0.1:5555"
 )
