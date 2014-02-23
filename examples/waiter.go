@@ -18,15 +18,17 @@ func (t Handle) Load(f string) {
 func (t Handle) Process(qid int, query string) string {
    switch query {
       case "breakfast":
-         return "cereal, orange juice"
+         return "breakfast menu: cereal, orange juice"
       case "snack":
-         return "cookies"
+         return "snack menu: cookies"
+      case "lunch":
+         return "lunch menu: chicken, salad, noodles"
       case "dinner":
-         return "steak, salad, water"
+         return "dinner menu: steak, salad, water"
       case "latenight":
-         return "red wine"
+         return "latenight menu: red wine"
    }
-   return "chocolate"
+   return "others: chocolate"
 }
 
 func main() {

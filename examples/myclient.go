@@ -6,7 +6,7 @@ import (
 )
 
 func print (qid int64, res string) {
-   fmt.Println("Got qid", qid, ", and answer:", res)
+   fmt.Println(">", qid, res)
 }
 
 func main() {

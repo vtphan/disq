@@ -64,10 +64,7 @@ func (s *Server) Serve() {
    for s.state > 0 {
       if s.state == 1 {  // idle
          s.Listen()
-         defer s.query_socket.Close()
-         defer s.result_socket.Close()
       } else if s.state == 2 { // active
-         fmt.Println("here")
          s.ProcessQuery()
       }
    }
@@ -89,10 +86,14 @@ func (s *Server) Listen() {
       data_path = items[3]
       index_path = items[4]
       DEBUG = (items[5] == "true")
+      query_address := fmt.Sprintf("tcp://%s:%d",s.host,s.query_port)
+      result_address := fmt.Sprintf("tcp://%s:%d",s.host,s.result_port)
+      fmt.Printf("Server push/pull on %s %s\n",query_address,result_address)
+
       s.query_socket, _ = s.context.NewSocket(zmq.PULL)
-      s.query_socket.Connect(fmt.Sprintf("tcp://%s:%s",s.host,s.query_port))
+      s.query_socket.Connect(query_address)
       s.result_socket, _ = s.context.NewSocket(zmq.PUSH)
-      s.result_socket.Connect(fmt.Sprintf("tcp://%s:%s",s.host,s.result_port))
+      s.result_socket.Connect(result_address)
       s.state = 2
 
       if s.index_path != index_path {
@@ -146,7 +147,9 @@ func (s *Server) ProcessQuery() {
          msg, _ = pi[1].Socket.Recv(0)
          if string(msg) == "END" {
             s.state = 1
-            if DEBUG { fmt.Printf("Service stopped") }
+            s.query_socket.Close()
+            s.result_socket.Close()
+            if DEBUG { fmt.Println("Service ended") }
             return
          }
       }

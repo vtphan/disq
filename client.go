@@ -54,7 +54,7 @@ func NewClient(config_file string) *Client {
 
    c.SendRequest()
 
-   fmt.Printf("Client serving on %s:%d:%d:%d\n", c.host, c.pubsub_port, c.query_port, c.result_port)
+   fmt.Printf("Client connecting to %s:%d:%d:%d\n", c.host, c.pubsub_port, c.query_port, c.result_port)
    return c
 }
 
@@ -62,7 +62,7 @@ func NewClient(config_file string) *Client {
 func (c *Client) SendRequest() {
    // give some time for subscribers to get message
    time.Sleep(500*time.Millisecond)
-   msg := fmt.Sprintf("REQ %s %s %s %s %t",c.query_port,c.result_port,c.data_path,c.index_path,DEBUG)
+   msg := fmt.Sprintf("REQ %d %d %s %s %t",c.query_port,c.result_port,c.data_path,c.index_path,DEBUG)
    c.pub_socket.Send([]byte(msg), 0)
    time.Sleep(500*time.Millisecond)
 
@@ -102,17 +102,14 @@ func (c *Client) SendQueries(query_file string) {
       line = bytes.Trim(line, "\n\r")
       if len(line) > 1 {
          msg := fmt.Sprintf("%d %s", c.input_count, line)
-         fmt.Println("prepare to send message:", msg)
-         err = c.query_socket.Send([]byte(msg), 0)
-         fmt.Println("err:", err)
+         c.query_socket.Send([]byte(msg), 0)
          c.input_count++
          if DEBUG { fmt.Println("Distribute", msg) }
       }
    }
 
    c.pub_socket.Send([]byte("END"), 0)
-
-   if DEBUG { fmt.Println("Send END message") }
+   if DEBUG { fmt.Println("END request") }
 }
 
 // -----------------------------------------------------------------------
@@ -133,7 +130,7 @@ func (c *Client) ProcessResult(processor func (int64, string)) {
       _, _ = zmq.Poll(pi, -1)
 
       switch {
-      // Receives result from workers.
+      // Receives result from servers.
       case pi[0].REvents&zmq.POLLIN != 0:
          msg, _ = pi[0].Socket.Recv(0)
          items = strings.SplitN(string(msg), " ", 2)
@@ -141,7 +138,6 @@ func (c *Client) ProcessResult(processor func (int64, string)) {
          ans = items[1]
          if qid >= 0 {
             c.result_count++
-            if DEBUG { fmt.Println("Process:", ans) }
             processor(qid, ans)
          } else {
             fmt.Println("Error:", qid, ans)
@@ -153,7 +149,6 @@ func (c *Client) ProcessResult(processor func (int64, string)) {
          items = strings.SplitN(string(msg), " ", 4)
          if items[0] == "END" {
             distribute_all_queries = true
-            if DEBUG { fmt.Println("Process: all queries distributec.") }
          }
       }
    }
