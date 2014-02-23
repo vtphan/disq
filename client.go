@@ -7,68 +7,93 @@ import (
    zmq "github.com/alecthomas/gozmq"
    "time"
    "os"
-   // "flag"
+   "flag"
    "bytes"
    "bufio"
+   "io/ioutil"
    "strings"
    "strconv"
    "runtime"
 )
 
+// flag.BoolVar(&DEBUG, "DEBUG", DEBUG, "turn on debug mode")
 
-type Distributor struct {
+
+type Client struct {
    context              *zmq.Context
    pub_socket           *zmq.Socket
    sub_socket           *zmq.Socket
    query_socket         *zmq.Socket
    result_socket        *zmq.Socket
-   input_count    int
-   result_count   int
-   data_file      string
-   index_file     string
-   query_file     string
+   input_count, result_count              int
+   data_file, index_file host             string
+   pubsub_port, query_port, result_port   int
 }
 
-func NewDistributor() *Distributor {
-   d := new(Distributor)
-   d.context, _ = zmq.NewContext()
+// -----------------------------------------------------------------------
 
+func NewClient(config_file string) *Client {
+   var err           error
+   var host          []byte
+   var items         []string
+   var address       string
+
+   address, err = ioutil.ReadFile(CONFIG_FILE)
+
+   if err != nil {
+      panic(fmt.Sprintf("Problem reading %s.", CONFIG_FILE))
+   }
+
+   d := new(Client)
+   items = strings.Split(PUBSUB, ":", 2)
+   d.host = items[0]
+   d.pubsub_port, _ = strconv.Atoi(items[1])
+   d.query_port, d.result_port, d.data_file, d.index_file = ReadConfig(config_file)
+
+   d.context, _ = zmq.NewContext()
    d.pub_socket, _ = d.context.NewSocket(zmq.PUB)
-   d.pub_socket.Bind("tcp://127.0.0.1:5555")
+   d.pub_socket.Bind(fmt.Sprintf("tcp://%s:%d", d.host, d.pubsub_port))
    d.sub_socket, _ = d.context.NewSocket(zmq.SUB)
    d.sub_socket.SetSubscribe("")
-   d.sub_socket.Connect("tcp://127.0.0.1:5555")
-
+   d.sub_socket.Connect(fmt.Sprintf("tcp://%s:%d", d.host, d.pubsub_port))
    d.query_socket, _ = d.context.NewSocket(zmq.PUSH)
-   d.query_socket.Bind("tcp://127.0.0.1:5557")
-
+   d.query_socket.Bind(fmt.Sprintf("tcp://%s:%d", d.host, d.query_port))
    d.result_socket, _ = d.context.NewSocket(zmq.PULL)
-   d.result_socket.Bind("tcp://127.0.0.1:5558")
+   d.result_socket.Bind(fmt.Sprintf("tcp://%s:%d", d.host, d.result_port))
+
+   // give some time for subscribers to get message
+   time.Sleep(500*time.Millisecond)
+   msg := fmt.Sprintf("REQ %s %s %s %s %t",d.query_port,d.result_port,data_file,index_file,DEBUG)
+   d.pub_socket.Send([]byte(msg), 0)
+   time.Sleep(500*time.Millisecond)
+
+   fmt.Printf("Client serving on %s:%d:%d:%d\n", d.host, d.pubsub_port, d.query_port, d.result_port)
    return d
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) Configure(data_file, index_file, query_file string, debug_mode bool) {
-   d.data_file = data_file
-   d.index_file = index_file
-   d.query_file = query_file
 
-   DEBUG = debug_mode
-   if DEBUG {
-      fmt.Println("Configure", data_file, index_file)
-   }
-
-   // give some time for subscribers to get message
-   time.Sleep(500*time.Millisecond)
-   msg := fmt.Sprintf("CONF %s %s %t", data_file, index_file, DEBUG)
-   d.pub_socket.Send([]byte(msg), 0)
-   time.Sleep(500*time.Millisecond)
+func (d *Client) Close() {
+   d.pub_socket.Close()
+   d.sub_socket.Close()
+   d.query_socket.Close()
+   d.result_socket.Close()
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) Distribute() {
-   f, err := os.Open(d.query_file)
-   if err != nil { panic("error opening file " + d.query_file) }
+
+func (d *Client) Run(query_file string, processor func (int64, string)) {
+   defer d.Close()
+   runtime.GOMAXPROCS(2)
+   go d.SendQueries(query_file)
+   d.ProcessResult(processor)
+}
+
+// -----------------------------------------------------------------------
+
+func (d *Client) SendQueries(query_file string) {
+   f, err := os.Open(query_file)
+   if err != nil { panic("error opening file " + query_file) }
    r := bufio.NewReader(f)
    d.input_count = 0
    d.result_count = 0
@@ -87,12 +112,14 @@ func (d *Distributor) Distribute() {
       }
    }
 
-   d.pub_socket.Send([]byte("END 0 0 0"), 0)
-   fmt.Println("Send END message")
+   d.pub_socket.Send([]byte("END"), 0)
+
+   if DEBUG { fmt.Println("Send END message") }
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) ProcessResult(processor func (int64, string)) {
+
+func (d *Client) ProcessResult(processor func (int64, string)) {
    var items []string
    var msg []byte
    var qid int64
@@ -135,9 +162,5 @@ func (d *Distributor) ProcessResult(processor func (int64, string)) {
 }
 
 // -----------------------------------------------------------------------
-func (d *Distributor) Run( processor func (int64, string) ) {
-   runtime.GOMAXPROCS(2)
-   go d.Distribute()
-   d.ProcessResult(processor)
-}
+
 
