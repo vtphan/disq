@@ -1,0 +1,6 @@
+breakfast
+snack
+lunch
+dinner
+latenight
+munchies
