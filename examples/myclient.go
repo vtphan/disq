@@ -13,7 +13,6 @@ func print (qid int64, res string) {
 func main() {
    if len(os.Args) < 3 {
       fmt.Println("must provide config.json queries.txt")
-      return
    }
    d := disq.NewClient(os.Args[1])
    d.Run(os.Args[2], print)

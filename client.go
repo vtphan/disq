@@ -28,6 +28,27 @@ type Client struct {
 
 // -----------------------------------------------------------------------
 
+func (c *Client) NewSocket(socket_type zmq.SocketType, connect_type string, port int) *zmq.Socket {
+   var sock *zmq.Socket
+   var err error
+   sock, err = c.context.NewSocket(socket_type)
+   if err != nil {
+      panic(fmt.Sprintf("Socket (%s) error on port (%d): %s", connect_type, port, err))
+   }
+   if connect_type == "Bind" {
+      err = sock.Bind(fmt.Sprintf("tcp://%s:%d", c.host, port))
+   } else {
+      err = sock.Connect(fmt.Sprintf("tcp://%s:%d", c.host, port))
+   }
+   if err != nil {
+      sock.Close()
+      panic(fmt.Sprintf("Connection (%s) error on port (%d): %s", connect_type, port, err))
+   }
+   return sock
+}
+
+// -----------------------------------------------------------------------
+
 func NewClient(config_file string) *Client {
    flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
    flag.BoolVar(&TIMING, "timing", TIMING, "turn on timing")
@@ -42,15 +63,11 @@ func NewClient(config_file string) *Client {
    c.query_port, c.result_port, c.data_path, c.index_path = ReadConfig(config_file)
 
    c.context, _ = zmq.NewContext()
-   c.pub_socket, _ = c.context.NewSocket(zmq.PUB)
-   c.pub_socket.Bind(fmt.Sprintf("tcp://%s:%d", c.host, c.pubsub_port))
-   c.sub_socket, _ = c.context.NewSocket(zmq.SUB)
+   c.pub_socket = c.NewSocket(zmq.PUB, "Bind", c.pubsub_port)
+   c.sub_socket = c.NewSocket(zmq.SUB, "Connect", c.pubsub_port)
    c.sub_socket.SetSubscribe("")
-   c.sub_socket.Connect(fmt.Sprintf("tcp://%s:%d", c.host, c.pubsub_port))
-   c.query_socket, _ = c.context.NewSocket(zmq.PUSH)
-   c.query_socket.Bind(fmt.Sprintf("tcp://%s:%d", c.host, c.query_port))
-   c.result_socket, _ = c.context.NewSocket(zmq.PULL)
-   c.result_socket.Bind(fmt.Sprintf("tcp://%s:%d", c.host, c.result_port))
+   c.query_socket = c.NewSocket(zmq.PUSH, "Bind", c.query_port)
+   c.result_socket = c.NewSocket(zmq.PULL, "Bind", c.result_port)
 
    c.SendRequest()
 
