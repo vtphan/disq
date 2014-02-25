@@ -12,19 +12,19 @@ import (
    // "bytes"
 )
 
-type ServerInterface interface {
+type WorkerInterface interface {
    Build(filename string)
    Load(filename string)
    Process(qid int, query string) string
 }
 
-type Server struct {
+type Worker struct {
    context           *zmq.Context
    sub_socket        *zmq.Socket
    query_socket      *zmq.Socket
    result_socket     *zmq.Socket
    index_path        string
-   handle            ServerInterface
+   handle            WorkerInterface
    host              string
    pubsub_port, query_port, result_port   int
 
@@ -33,79 +33,79 @@ type Server struct {
 }
 
 // -----------------------------------------------------------------------
-func NewServer(handle ServerInterface) *Server {
+func NewWorker(handle WorkerInterface) *Worker {
    flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
    flag.Parse()
 
    var items         []string
 
-   s := new(Server)
-   s.handle = handle
-   s.index_path = ""
+   w := new(Worker)
+   w.handle = handle
+   w.index_path = ""
 
    items = strings.SplitN(PUBSUB, ":", 2)
-   s.host = items[0]
-   s.pubsub_port, _ = strconv.Atoi(items[1])
+   w.host = items[0]
+   w.pubsub_port, _ = strconv.Atoi(items[1])
 
-   s.context, _ = zmq.NewContext()
-   s.sub_socket, _ = s.context.NewSocket(zmq.SUB)
-   s.sub_socket.SetSubscribe("")
-   s.sub_socket.Connect(fmt.Sprintf("tcp://%s:%d", s.host, s.pubsub_port))
-   fmt.Printf("Server subscribing to tcp://%s:%d\n", s.host,s.pubsub_port)
-   return s
+   w.context, _ = zmq.NewContext()
+   w.sub_socket, _ = w.context.NewSocket(zmq.SUB)
+   w.sub_socket.SetSubscribe("")
+   w.sub_socket.Connect(fmt.Sprintf("tcp://%s:%d", w.host, w.pubsub_port))
+   fmt.Printf("Worker subscribing to tcp://%s:%d\n", w.host,w.pubsub_port)
+   return w
 }
 
 
 // -----------------------------------------------------------------------
 
-func (s *Server) Serve() {
-   defer s.sub_socket.Close()
+func (w *Worker) Run() {
+   defer w.sub_socket.Close()
 
-   s.state = 1
-   for s.state > 0 {
-      if s.state == 1 {  // idle
-         s.Listen()
-      } else if s.state == 2 { // active
-         s.ProcessQuery()
+   w.state = 1
+   for w.state > 0 {
+      if w.state == 1 {  // idle
+         w.Listen()
+      } else if w.state == 2 { // active
+         w.ProcessQuery()
       }
    }
 }
 
 // -----------------------------------------------------------------------
 
-func (s *Server) Listen() {
+func (w *Worker) Listen() {
    var index_path, data_path string
    var items []string
    var msg []byte
    var err error
 
-   msg, _ = s.sub_socket.Recv(0)
+   msg, _ = w.sub_socket.Recv(0)
    items = strings.SplitN(string(msg), " ", 5)
    if items[0] == "REQ" {
-      s.query_port, _ = strconv.Atoi(items[1])
-      s.result_port, _ = strconv.Atoi(items[2])
+      w.query_port, _ = strconv.Atoi(items[1])
+      w.result_port, _ = strconv.Atoi(items[2])
       data_path = items[3]
       index_path = items[4]
-      query_address := fmt.Sprintf("tcp://%s:%d",s.host,s.query_port)
-      result_address := fmt.Sprintf("tcp://%s:%d",s.host,s.result_port)
-      fmt.Printf("Server push/pull on %s %s\n",query_address,result_address)
+      query_address := fmt.Sprintf("tcp://%s:%d",w.host,w.query_port)
+      result_address := fmt.Sprintf("tcp://%s:%d",w.host,w.result_port)
+      fmt.Printf("Worker push/pull on %s %s\n",query_address,result_address)
 
-      s.query_socket, _ = s.context.NewSocket(zmq.PULL)
-      s.query_socket.Connect(query_address)
-      s.result_socket, _ = s.context.NewSocket(zmq.PUSH)
-      s.result_socket.Connect(result_address)
-      s.state = 2
+      w.query_socket, _ = w.context.NewSocket(zmq.PULL)
+      w.query_socket.Connect(query_address)
+      w.result_socket, _ = w.context.NewSocket(zmq.PUSH)
+      w.result_socket.Connect(result_address)
+      w.state = 2
 
-      if s.index_path != index_path {
-         s.index_path = index_path
+      if w.index_path != index_path {
+         w.index_path = index_path
          if _, err = os.Stat(index_path); err == nil {
-            s.handle.Load(index_path)
+            w.handle.Load(index_path)
             if DEBUG { fmt.Println("Loading", index_path) }
          } else if _, err = os.Stat(data_path); err == nil {
-            s.handle.Build(data_path)
+            w.handle.Build(data_path)
             if DEBUG { fmt.Println("Building from", data_path) }
          } else {
-            s.query_socket.Send([]byte("ERR data/index not found."),0)
+            w.query_socket.Send([]byte("ERR data/index not found."),0)
             fmt.Printf("%s and %s not found", data_path,index_path)
          }
       } else if DEBUG {
@@ -116,15 +116,15 @@ func (s *Server) Listen() {
 
 // -----------------------------------------------------------------------
 
-func (s *Server) ProcessQuery() {
+func (w *Worker) ProcessQuery() {
    var msg []byte
    var items []string
    var query, result string
    var qid int64
 
    pi := zmq.PollItems{
-      zmq.PollItem{Socket: s.query_socket, Events: zmq.POLLIN},
-      zmq.PollItem{Socket: s.sub_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: w.query_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: w.sub_socket, Events: zmq.POLLIN},
    }
 
    for {
@@ -136,8 +136,8 @@ func (s *Server) ProcessQuery() {
          items = strings.SplitN(string(msg), " ", 2)
          qid, _ = strconv.ParseInt(items[0], 10, 64)
          query = items[1]
-         result = s.handle.Process(int(qid), query)
-         s.result_socket.Send([]byte(fmt.Sprintf("%d %s", qid,result)), 0)
+         result = w.handle.Process(int(qid), query)
+         w.result_socket.Send([]byte(fmt.Sprintf("%d %s", qid,result)), 0)
 
          if DEBUG { fmt.Println("Query:",qid,query,"\nResult:",result) }
 
@@ -145,9 +145,9 @@ func (s *Server) ProcessQuery() {
       case pi[1].REvents&zmq.POLLIN != 0:
          msg, _ = pi[1].Socket.Recv(0)
          if string(msg) == "END" {
-            s.state = 1
-            s.query_socket.Close()
-            s.result_socket.Close()
+            w.state = 1
+            w.query_socket.Close()
+            w.result_socket.Close()
             if DEBUG { fmt.Println("Service ended") }
             return
          }

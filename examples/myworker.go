@@ -32,6 +32,6 @@ func (t Handle) Process(qid int, query string) string {
 }
 
 func main() {
-   w := disq.NewServer(Handle{})
-   w.Serve()
+   w := disq.NewWorker(Handle{})
+   w.Run()
 }

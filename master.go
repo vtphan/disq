@@ -15,7 +15,7 @@ import (
    "flag"
 )
 
-type Client struct {
+type Master struct {
    context              *zmq.Context
    pub_socket           *zmq.Socket
    sub_socket           *zmq.Socket
@@ -28,17 +28,17 @@ type Client struct {
 
 // -----------------------------------------------------------------------
 
-func (c *Client) NewSocket(socket_type zmq.SocketType, connect_type string, port int) *zmq.Socket {
+func (m *Master) NewSocket(socket_type zmq.SocketType, connect_type string, port int) *zmq.Socket {
    var sock *zmq.Socket
    var err error
-   sock, err = c.context.NewSocket(socket_type)
+   sock, err = m.context.NewSocket(socket_type)
    if err != nil {
       panic(fmt.Sprintf("Socket (%s) error on port (%d): %s", connect_type, port, err))
    }
    if connect_type == "Bind" {
-      err = sock.Bind(fmt.Sprintf("tcp://%s:%d", c.host, port))
+      err = sock.Bind(fmt.Sprintf("tcp://%s:%d", m.host, port))
    } else {
-      err = sock.Connect(fmt.Sprintf("tcp://%s:%d", c.host, port))
+      err = sock.Connect(fmt.Sprintf("tcp://%s:%d", m.host, port))
    }
    if err != nil {
       sock.Close()
@@ -49,61 +49,61 @@ func (c *Client) NewSocket(socket_type zmq.SocketType, connect_type string, port
 
 // -----------------------------------------------------------------------
 
-func NewClient(config_file string) *Client {
+func NewMaster(config_file string) *Master {
    flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
    flag.BoolVar(&TIMING, "timing", TIMING, "turn on timing")
    flag.Parse()
 
    var items         []string
 
-   c := new(Client)
+   m := new(Master)
    items = strings.SplitN(PUBSUB, ":", 2)
-   c.host = items[0]
-   c.pubsub_port, _ = strconv.Atoi(items[1])
-   c.query_port, c.result_port, c.data_path, c.index_path = ReadConfig(config_file)
+   m.host = items[0]
+   m.pubsub_port, _ = strconv.Atoi(items[1])
+   m.query_port, m.result_port, m.data_path, m.index_path = ReadConfig(config_file)
 
-   c.context, _ = zmq.NewContext()
-   c.pub_socket = c.NewSocket(zmq.PUB, "Bind", c.pubsub_port)
-   c.sub_socket = c.NewSocket(zmq.SUB, "Connect", c.pubsub_port)
-   c.sub_socket.SetSubscribe("")
-   c.query_socket = c.NewSocket(zmq.PUSH, "Bind", c.query_port)
-   c.result_socket = c.NewSocket(zmq.PULL, "Bind", c.result_port)
+   m.context, _ = zmq.NewContext()
+   m.pub_socket = m.NewSocket(zmq.PUB, "Bind", m.pubsub_port)
+   m.sub_socket = m.NewSocket(zmq.SUB, "Connect", m.pubsub_port)
+   m.sub_socket.SetSubscribe("")
+   m.query_socket = m.NewSocket(zmq.PUSH, "Bind", m.query_port)
+   m.result_socket = m.NewSocket(zmq.PULL, "Bind", m.result_port)
 
-   c.SendRequest()
+   m.SendRequest()
 
-   fmt.Printf("Client connecting to %s:%d:%d:%d\n", c.host, c.pubsub_port, c.query_port, c.result_port)
-   return c
+   fmt.Printf("Master connecting to %s:%d:%d:%d\n", m.host, m.pubsub_port, m.query_port, m.result_port)
+   return m
 }
 
 // -----------------------------------------------------------------------
-func (c *Client) SendRequest() {
+func (m *Master) SendRequest() {
    // give some time for subscribers to get message
    time.Sleep(500*time.Millisecond)
-   msg := fmt.Sprintf("REQ %d %d %s %s",c.query_port,c.result_port,c.data_path,c.index_path)
-   c.pub_socket.Send([]byte(msg), 0)
+   msg := fmt.Sprintf("REQ %d %d %s %s",m.query_port,m.result_port,m.data_path,m.index_path)
+   m.pub_socket.Send([]byte(msg), 0)
    time.Sleep(500*time.Millisecond)
 
 }
 // -----------------------------------------------------------------------
 
-func (c *Client) Close() {
-   c.pub_socket.Close()
-   c.sub_socket.Close()
-   c.query_socket.Close()
-   c.result_socket.Close()
+func (m *Master) Close() {
+   m.pub_socket.Close()
+   m.sub_socket.Close()
+   m.query_socket.Close()
+   m.result_socket.Close()
 }
 
 // -----------------------------------------------------------------------
 
-func (c *Client) Run(query_file string, processor func (int64, string)) {
+func (m *Master) Run(query_file string, processor func (int64, string)) {
    var startTime, endTime time.Time
    if TIMING {
       startTime = time.Now()
    }
-   defer c.Close()
+   defer m.Close()
    runtime.GOMAXPROCS(2)
-   go c.SendQueries(query_file)
-   c.ProcessResult(processor)
+   go m.SendQueries(query_file)
+   m.ProcessResult(processor)
 
    if TIMING {
       endTime = time.Now()
@@ -113,12 +113,12 @@ func (c *Client) Run(query_file string, processor func (int64, string)) {
 
 // -----------------------------------------------------------------------
 
-func (c *Client) SendQueries(query_file string) {
+func (m *Master) SendQueries(query_file string) {
    f, err := os.Open(query_file)
    if err != nil { panic("error opening file " + query_file) }
    r := bufio.NewReader(f)
-   c.input_count = 0
-   c.result_count = 0
+   m.input_count = 0
+   m.result_count = 0
 
    err = nil
    var line []byte
@@ -127,20 +127,20 @@ func (c *Client) SendQueries(query_file string) {
       line, err = r.ReadBytes('\n')
       line = bytes.Trim(line, "\n\r")
       if len(line) > 1 {
-         msg := fmt.Sprintf("%d %s", c.input_count, line)
-         c.query_socket.Send([]byte(msg), 0)
-         c.input_count++
+         msg := fmt.Sprintf("%d %s", m.input_count, line)
+         m.query_socket.Send([]byte(msg), 0)
+         m.input_count++
          if DEBUG { fmt.Println("Distribute", msg) }
       }
    }
 
-   c.pub_socket.Send([]byte("END"), 0)
+   m.pub_socket.Send([]byte("END"), 0)
    if DEBUG { fmt.Println("END request") }
 }
 
 // -----------------------------------------------------------------------
 
-func (c *Client) ProcessResult(processor func (int64, string)) {
+func (m *Master) ProcessResult(processor func (int64, string)) {
    var items []string
    var msg []byte
    var qid int64
@@ -148,11 +148,11 @@ func (c *Client) ProcessResult(processor func (int64, string)) {
    distribute_all_queries := false
 
    pi := zmq.PollItems{
-      zmq.PollItem{Socket: c.result_socket, Events: zmq.POLLIN},
-      zmq.PollItem{Socket: c.sub_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: m.result_socket, Events: zmq.POLLIN},
+      zmq.PollItem{Socket: m.sub_socket, Events: zmq.POLLIN},
    }
 
-   for ! distribute_all_queries || c.result_count < c.input_count {
+   for ! distribute_all_queries || m.result_count < m.input_count {
       _, _ = zmq.Poll(pi, -1)
 
       switch {
@@ -163,7 +163,7 @@ func (c *Client) ProcessResult(processor func (int64, string)) {
          qid, _ = strconv.ParseInt(items[0], 10, 64)
          ans = items[1]
          if qid >= 0 {
-            c.result_count++
+            m.result_count++
             processor(qid, ans)
          } else {
             fmt.Println("Error:", qid, ans)
