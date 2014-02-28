@@ -12,7 +12,6 @@ import (
    "strings"
    "strconv"
    "runtime"
-   "flag"
 )
 
 type Master struct {
@@ -50,10 +49,6 @@ func (m *Master) NewSocket(socket_type zmq.SocketType, connect_type string, port
 // -----------------------------------------------------------------------
 
 func NewMaster(config_file string) *Master {
-   flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
-   flag.BoolVar(&TIMING, "timing", TIMING, "turn on timing")
-   flag.Parse()
-
    var items         []string
 
    m := new(Master)

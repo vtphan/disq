@@ -7,7 +7,6 @@ import (
    "strings"
    "os"
    "strconv"
-   "flag"
    // "time"
    // "bytes"
 )
@@ -34,9 +33,6 @@ type Worker struct {
 
 // -----------------------------------------------------------------------
 func NewWorker(handle WorkerInterface) *Worker {
-   flag.BoolVar(&DEBUG, "debug", DEBUG, "turn on debug mode")
-   flag.Parse()
-
    var items         []string
 
    w := new(Worker)
