@@ -1,5 +1,0 @@
-{
-   "Ports" : [5556, 5557],
-   "DataPath" : "genome.txt",
-   "IndexPath" : "genome.index"
-}
