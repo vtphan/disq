@@ -28,6 +28,8 @@ func NewNode(addr, peer_addr string) *Node {
    if peer_addr != nil {
       n.peer_greet(peer_addr)
    }
+   fmt.Printf("New node listening on %s", n.addr)
+   return n
 }
 
 
@@ -47,12 +49,21 @@ func (n *Node) handle_connection(conn net.Conn) {
    scanner := bufio.NewScanner(conn)
    scanner.Scan()
    line := scanner.Text()
-   fmt.Println(n.addr, "receive", line)
-
    items = strings.SplitN(line, " ", 2)
+
    switch (items[0]) {
    case "hi":
       n.peer_update(items[1])
+
+   case "update":
+      addrs := strings.Split(items[1], " ")
+      for a := range addrs {
+         n.peers[a] = true
+      }
+      fmt.Printf("[%s] receive update: ", n.addr, items[1])
+
+   default:
+      log.Fatalf("[%s] unknown message type: %s\n", n.addr, line)
    }
 }
 
@@ -61,10 +72,9 @@ func (n *Node) peer_greet(peer_addr string) {
    conn, err := net.Dial("tcp", peer_addr)
    if err != nil {
       log.Println("Unable to connect to peer", peer_addr)
-      return n
    }
    defer conn.Close()
-   fmt.Println("greet", peer_addr)
+   fmt.Printf("[%s] greet %s\n", n.addr, peer_addr)
    fmt.Fprintf(peer_conn, "hi %s", n.addr)
    n.peers[peer_addr] = true
 }
@@ -83,6 +93,6 @@ func (n *Node) peer_update(peer_addr string) {
    for addr := range n.peers {
       msg += addr + " "
    }
-   fmt.Println("update", peer_addr, msg)
+   fmt.Printf("[%s] update to %s: %s", n.addr, peer_addr, msg)
    fmt.Fprintf(conn, msg)
 }
