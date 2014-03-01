@@ -31,7 +31,7 @@ func NewNode(addr string) *Node {
 }
 
 
-func (n *Node) Run(peer_addr string) {
+func (n *Node) Join(peer_addr string) {
    fmt.Println("New node listening on", n.addr)
 
    if peer_addr != "" {
