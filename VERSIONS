@@ -1,6 +1,1 @@
-Master
-- Each service request is allocated with new push/pull sockets
-
-Beta
-- Do not support multiple distributors
 
