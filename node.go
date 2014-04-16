@@ -1,3 +1,7 @@
+/*
+Author: Vinhthuy Phan
+nodes form a clique.
+*/
 package disq
 
 import (
@@ -10,7 +14,7 @@ import (
 )
 
 type WorkerInterface interface {
-   Process(qid int, query []string) string
+   ProcessQuery(qid int, query []string) string
 }
 
 type Worker struct {
@@ -112,7 +116,7 @@ func (n *Node) handle_message(mesg string, scanner *bufio.Scanner) bool {
    switch (items[0]) {
    case "join":
       n.add_node(items[1])
-      n.group_update(items[1])
+      n.group_update()
       n.group_print()
 
    case "update":
@@ -128,9 +132,6 @@ func (n *Node) handle_message(mesg string, scanner *bufio.Scanner) bool {
    case "add":
       n.setup_client(items[1], items[2])
 
-   case "ping":
-      break
-
    default:
       log.Fatalf("[%s] unknown message type: %s\n", n.addr, mesg)
 
@@ -143,15 +144,12 @@ func (n *Node) handle_message(mesg string, scanner *bufio.Scanner) bool {
 func (n *Node) add_node(addr string) bool {
    _, ok := n.group[addr]
    if ok {
-      n.group[addr].Close()
+      return true
    }
 
    conn, err := net.Dial("tcp", addr)
    if err != nil {
-      log.Println("Fail to add node", addr, err)
-      if ok {
-         delete(n.group, addr)
-      }
+      log.Println(err)
       return false
    }
 
@@ -173,10 +171,15 @@ func (n *Node) group_addresses() string {
 /*
    Update all nodes in group.  Periodic update is achieved by calling group_update("").
 */
-func (n *Node) group_update(peer_addr string) {
-   if peer_addr != "" {
-      for _, conn := range n.group {
-         conn.Write([]byte("update " + n.group_addresses() + "\n"))
+func (n *Node) group_update() {
+   var err error
+   mesg := []byte("update " + n.group_addresses() + "\n")
+   for addr, conn := range n.group {
+      _, err = conn.Write(mesg)
+      if err != nil {
+         conn.Close()
+         delete(n.group, addr)
+         mesg = []byte("update " + n.group_addresses() + "\n")
       }
    }
 }
@@ -192,7 +195,6 @@ func (n *Node) group_print() {
    }
    fmt.Printf("\n")
 }
-
 
 
 /*
