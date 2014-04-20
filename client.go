@@ -6,6 +6,8 @@ import (
    "fmt"
    "strings"
    "bufio"
+   "os"
+   // "time"
 )
 
 type CollectorInterface interface {
@@ -20,37 +22,69 @@ type Client struct {
 }
 
 
-func NewClient(addr string) *Client {
-   var err error
+func NewClient(addr string, collector CollectorInterface) *Client {
    c := new(Client)
+   c.collector = collector
    c.addr = addr
-   c.listener, err = net.Listen("tcp", c.addr)
-   if err != nil {
-      log.Fatalln("Unable to connect to", c.addr)
-      return nil
-   }
    c.nodes = make(map[string]net.Conn)
    return c
 }
 
 
-func (c *Client) request_service(addr, query_file string) {
-   conn, err := net.Dial("tcp", addr)
-   if err != nil {
-      log.Println("Unable to connect to node", addr)
+func (c *Client) do_handshake(node_addr_file, index_file string) {
+   file, e := os.Open(node_addr_file)
+   if e != nil {
+      log.Fatalln("Unable to open file", node_addr_file)
    }
-   defer conn.Close()
-   fmt.Printf("[%s] request service from %s\n", c.addr, addr)
-   fmt.Fprintf(conn, "request %s %s", c.addr, query_file)
+   defer file.Close()
+   scanner := bufio.NewScanner(file)
+   for scanner.Scan() {
+      addr := scanner.Text()
+      conn, e := net.Dial("tcp", addr)
+      if e == nil {
+         c.nodes[addr] = conn
+         fmt.Fprintf(conn, "handshake %s %s\n", c.addr, index_file)
+      }
+   }
 }
 
 
-func (c *Client) Run(node_addr, query_file string, collector CollectorInterface) {
+func (c *Client) send_queries(query_file string) {
+   file, e := os.Open(query_file)
+   if e != nil {
+      log.Fatalln("Unable to open file", query_file)
+   }
+   defer file.Close()
+   scanner := bufio.NewScanner(file)
+   stop := false
+   i := 0
+   for ! stop {
+      for _, node := range c.nodes {
+         if stop {
+            break
+         } else if scanner.Scan() {
+            fmt.Fprintf(node, "query %s %d %s\n", c.addr, i, scanner.Text())
+            i++
+         } else {
+            stop = true
+         }
+      }
+   }
+}
+
+func (c *Client) Run(node_addr_file, index_file, query_file string) {
    var err error
    var conn net.Conn
 
-   c.collector = collector
-   go c.request_service(node_addr, query_file)
+   c.listener, err = net.Listen("tcp", c.addr)
+   if err != nil {
+      log.Fatalln("Unable to listen to", c.addr)
+   }
+
+   go func() {
+      c.do_handshake(node_addr_file, index_file)
+      c.send_queries(query_file)
+   }()
 
    for {
       conn, err = c.listener.Accept()
@@ -66,42 +100,8 @@ func (c *Client) handle_connection(conn net.Conn) {
    scanner := bufio.NewScanner(conn)
    for !stop && scanner.Scan() {
       mesg := strings.Trim(scanner.Text(), "\n\r")
-      stop = c.handle_message(mesg, scanner)
+      fmt.Println(mesg)
    }
 }
 
-func (c *Client) handle_message(mesg string, scanner *bufio.Scanner) bool {
-   var items []string
 
-   items = strings.Split(mesg, " ")
-   switch (items[0]) {
-   case "accept":
-      c.add_node(items[1])
-
-   default:
-      log.Fatalln("Unknown message type", mesg)
-   }
-   return false
-}
-
-
-func (c *Client) add_node(addr string) {
-   _, ok := c.nodes[addr]
-   if ok {
-      c.nodes[addr].Close()
-   }
-
-   conn, err := net.Dial("tcp", addr)
-   if err != nil {
-      log.Println(err)
-      if ok {
-         delete(c.nodes, addr)
-      }
-   }
-
-   c.nodes[addr] = conn
-
-   for k,v := range c.nodes {
-      fmt.Println(k,v)
-   }
-}

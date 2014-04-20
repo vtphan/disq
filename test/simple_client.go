@@ -3,6 +3,7 @@ package main
 import (
    "github.com/vtphan/disq"
    "fmt"
+   "os"
 )
 
 type Collector struct {}
@@ -12,8 +13,7 @@ func (c *Collector) ProcessResult(qid int, result string) {
 }
 
 func main() {
-   address := "127.0.0.1:6000"
-   request_address := "127.0.0.1:5000"
-   c := disq.NewClient(address)
-   c.Run(request_address, "query.txt", &Collector{})
+   c := disq.NewClient("127.0.0.1:6000", &Collector{})
+   // os.Args[1] = addresses.txt
+   c.Run(os.Args[1], "index", "queries.txt")
 }
