@@ -3,17 +3,16 @@ package main
 import (
    "github.com/vtphan/disq"
    "fmt"
-   "os"
+   // "os"
 )
 
 type Collector struct {}
 
 func (c *Collector) ProcessResult(qid int, result string) {
-   fmt.Println("got", result)
+   fmt.Println("Client::ProcessResult", qid, result)
 }
 
 func main() {
-   c := disq.NewClient("127.0.0.1:6000", &Collector{})
-   // os.Args[1] = addresses.txt
-   c.Run(os.Args[1], "index", "queries.txt")
+   c := disq.NewClient("config-client.json")
+   c.Start("index", "queries.txt", nil) // &Collector{})
 }

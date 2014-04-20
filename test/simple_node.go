@@ -14,12 +14,12 @@ var (
 type myWorker struct { }
 
 func (m *myWorker) ProcessQuery(qid int, query string) string {
-   fmt.Println("ProcessQuery", qid, query)
-   return "Process " + string(qid) + " " + query
+   mesg := fmt.Sprintf("[%d Eatching %s]", qid, query)
+   return mesg
 }
 
 func Setup(filename string) disq.Worker {
-   fmt.Println("SimpleNode.Setup", filename)
+   fmt.Println("\tSimpleNode.Setup", filename)
    w := new(myWorker)
    return w
 }

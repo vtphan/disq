@@ -20,8 +20,8 @@ type Worker interface {
 }
 
 type WorkerStub struct {
-   conn     net.Conn
-   worker   Worker
+   client_conn    net.Conn
+   worker         Worker
 }
 
 type Node struct {
@@ -37,7 +37,7 @@ func NewNode(config_file string, setup func(string) Worker) *Node {
    n := new(Node)
    n.init_worker = setup
    n.clients = make(map[string]WorkerStub)
-   n.addr, n.data_dir = ReadConfig(config_file)
+   n.addr, n.data_dir = ReadNodeConfig(config_file)
 
    var err error
    n.listener, err = net.Listen("tcp", n.addr)
@@ -51,7 +51,7 @@ func NewNode(config_file string, setup func(string) Worker) *Node {
 func (n *Node) Close() {
    n.listener.Close()
    for _, c := range(n.clients) {
-      c.conn.Close()
+      c.client_conn.Close()
    }
 }
 
@@ -83,7 +83,7 @@ func (n *Node) handle_connection(conn net.Conn) {
 
       switch (items[0]) {
       case "handshake":
-         fmt.Println("handshake", items[1])
+         // fmt.Println("handshake", items[1])
          addr, query_file := items[1], items[2]
          conn, err := net.Dial("tcp", addr)
          if err != nil {
@@ -92,12 +92,14 @@ func (n *Node) handle_connection(conn net.Conn) {
             n.clients[addr] = WorkerStub{conn, n.init_worker(query_file)}
          }
 
-      case "query":
-         fmt.Println("query", items)
-         client := n.clients[items[1]]
+      case "query":  // Process query and send result back to client
          qid, _ := strconv.Atoi(items[2])
-         q := items[3]
-         go client.worker.ProcessQuery(qid, q)
+
+         go func(client_addr string, query_id int, query string) {
+            c := n.clients[client_addr]
+            result := c.worker.ProcessQuery(query_id, query)
+            fmt.Fprintf(c.client_conn, "%d %s\n", query_id, result)
+         }(items[1], qid, items[3])
 
       default:
          log.Fatalf("[%s] unknown message type: %s\n", n.addr, mesg)
