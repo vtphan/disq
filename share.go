@@ -5,8 +5,8 @@ import (
    "net"
    "encoding/json"
    "fmt"
-   "bytes"
-   "io/ioutil"
+   // "bytes"
+   // "io/ioutil"
    "bufio"
    "log"
 )
@@ -45,25 +45,26 @@ A config json-formated file may look like this:
 */
 type Config struct {
     Address string
+    Data_dir string
 }
 
-func ReadConfig(json_file string) string {
+func ReadConfig(json_file string) (string, string) {
   file, _ := os.Open(json_file)
   defer file.Close()
   decoder := json.NewDecoder(file)
   c := &Config{}
   decoder.Decode(&c)
-  return c.Address
+  return c.Address, c.Data_dir
 }
 
-func WriteConfig(json_file string, addrs string) {
-  var out bytes.Buffer
-  conf := Config{addrs}
-  encoder := json.NewEncoder(&out)
-  encoder.Encode(&conf)
-  ioutil.WriteFile(json_file, out.Bytes(), 0600)
-  fmt.Println("finish encoding", conf)
-}
+// func WriteConfig(json_file string, addrs string) {
+//   var out bytes.Buffer
+//   conf := Config{addrs}
+//   encoder := json.NewEncoder(&out)
+//   encoder.Encode(&conf)
+//   ioutil.WriteFile(json_file, out.Bytes(), 0600)
+//   fmt.Println("finish encoding", conf)
+// }
 
 func FindAddress() []string {
    var addrs []string

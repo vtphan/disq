@@ -18,13 +18,13 @@ func (m *myWorker) ProcessQuery(qid int, query string) string {
    return "Process " + string(qid) + " " + query
 }
 
-func Setup(filename string) disq.WorkerInterface {
+func Setup(filename string) disq.Worker {
    fmt.Println("SimpleNode.Setup", filename)
    w := new(myWorker)
    return w
 }
 
 func main() {
-   node := disq.NewNode(Setup)
-   node.Join(os.Args[1])  // addresses.txt
+   node := disq.NewNode(os.Args[1], Setup)
+   node.Start()
 }

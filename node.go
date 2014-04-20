@@ -15,78 +15,56 @@ import (
    // "time"
 )
 
-type WorkerInterface interface {
+type Worker interface {
    ProcessQuery(qid int, query string) string
 }
 
-type Worker struct {
-   client_conn    net.Conn
-   work           WorkerInterface
+type WorkerStub struct {
+   conn     net.Conn
+   worker   Worker
 }
 
 type Node struct {
    addr           string
-   group          map[string]net.Conn
+   data_dir       string
    listener       net.Listener
-   init_worker    func(string) WorkerInterface
-   clients        map[string]Worker
+   init_worker    func(string) Worker
+   clients        map[string]WorkerStub
 
 }
 
-func NewNode(setup func(string) WorkerInterface) *Node {
+func NewNode(config_file string, setup func(string) Worker) *Node {
    n := new(Node)
    n.init_worker = setup
-   n.clients = make(map[string]Worker)
-   n.group = make(map[string]net.Conn)
+   n.clients = make(map[string]WorkerStub)
+   n.addr, n.data_dir = ReadConfig(config_file)
+
+   var err error
+   n.listener, err = net.Listen("tcp", n.addr)
+   if err != nil {
+      log.Fatalln("Unable to listen to", n.addr)
+   }
    return n
 }
 
 
 func (n *Node) Close() {
    n.listener.Close()
+   for _, c := range(n.clients) {
+      c.conn.Close()
+   }
 }
 
 /*
    Join node, if addr is not taken, then be the first node.
 */
-func (n *Node) Join(addr_file string) {
-   var err error
-   free_addr, taken_addr := ScanAddresses(addr_file)
-   if free_addr == "" {
-      log.Fatalln("There is no free address in", addr_file)
-   }
-
-   n.addr = free_addr
-   n.listener, err = net.Listen("tcp", n.addr)
-   n.add_to_group(n.addr)
-
-   if taken_addr != "" {
-      n.group_join(taken_addr)
-   }
-
-   var conn net.Conn
-   fmt.Println("Listening on", n.addr)
+func (n *Node) Start() {
+   defer n.Close()
+   log.Println("Listening at", n.addr)
    for {
-      conn, err = n.listener.Accept()
+      conn, err := n.listener.Accept()
       if err == nil {
          go n.handle_connection(conn)
-      }
-   }
-}
-
-
-/*
-   Join group.  Peer will update all nodes in group.
-*/
-func (n *Node) group_join(peer_addr string) {
-   if n.add_to_group(peer_addr) {
-      fmt.Printf("[%s] join via %s\n", n.addr, peer_addr)
-      mesg := []byte("join " + n.addr + "\n")
-      _, err := n.group[peer_addr].Write(mesg)
-      if err != nil {
-         fmt.Println("Unable to write to", peer_addr)
-         n.group[peer_addr].Close()
-         delete(n.group, peer_addr)
       }
    }
 }
@@ -102,28 +80,16 @@ func (n *Node) handle_connection(conn net.Conn) {
    for scanner.Scan() {
       mesg := strings.Trim(scanner.Text(), "\n\r")
       items = strings.Split(mesg, " ")
+
       switch (items[0]) {
-      case "join": /* receive a join request from another node */
-         fmt.Println("join")
-         n.add_to_group(items[1])
-         n.group_update()
-         n.group_print()
-
-      case "update": /* receive a network update from another node */
-         fmt.Println("update")
-         n.group = make(map[string]net.Conn)
-         for i:=1; i<len(items); i++ {
-            n.add_to_group(items[i])
-         }
-         n.group_print()
-
       case "handshake":
          fmt.Println("handshake", items[1])
-         conn, err := net.Dial("tcp", items[1])
+         addr, query_file := items[1], items[2]
+         conn, err := net.Dial("tcp", addr)
          if err != nil {
             log.Println(err)
          } else {
-            n.clients[items[1]] = Worker{conn, n.init_worker(items[2])}
+            n.clients[addr] = WorkerStub{conn, n.init_worker(query_file)}
          }
 
       case "query":
@@ -131,7 +97,7 @@ func (n *Node) handle_connection(conn net.Conn) {
          client := n.clients[items[1]]
          qid, _ := strconv.Atoi(items[2])
          q := items[3]
-         go client.work.ProcessQuery(qid, q)
+         go client.worker.ProcessQuery(qid, q)
 
       default:
          log.Fatalf("[%s] unknown message type: %s\n", n.addr, mesg)
@@ -139,59 +105,6 @@ func (n *Node) handle_connection(conn net.Conn) {
    }
 }
 
-
-func (n *Node) add_to_group(addr string) bool {
-   conn, err := net.Dial("tcp", addr)
-   if err != nil {
-      if addr == n.addr {
-         log.Fatalln("Unable to connect to", n.addr)
-      }
-      log.Println(err)
-      return false
-   }
-
-   n.group[addr] = conn
-   return true
-}
-
-
-
-func (n *Node) group_addresses() string {
-   var group []string
-   for addr, _ := range n.group {
-      group = append(group, addr)
-   }
-   return strings.Join(group, " ")
-}
-
-
-/*
-   Update all nodes (including self) in group.
-*/
-func (n *Node) group_update() {
-   var err error
-   mesg := []byte("update " + n.group_addresses() + "\n")
-   for addr, conn := range n.group {
-      _, err = conn.Write(mesg)
-      if err != nil {
-         conn.Close()
-         delete(n.group, addr)
-         mesg = []byte("update " + n.group_addresses() + "\n")
-      }
-   }
-}
-
-
-func (n *Node) group_print() {
-   fmt.Printf("Group: ")
-   for a := range n.group {
-      if a == n.addr {
-         fmt.Print("*")
-      }
-      fmt.Printf("%s ", a)
-   }
-   fmt.Printf("\n")
-}
 
 
 
