@@ -1,3 +1,6 @@
+/*
+Author: Vinhthuy Phan, 2014
+*/
 package disq
 
 import (
@@ -8,7 +11,6 @@ import (
    "bufio"
    "os"
    "strconv"
-   // "time"
 )
 
 type CollectorInterface interface {
@@ -56,10 +58,6 @@ func NewClient(config_file string) *Client {
    return c
 }
 
-/*
-   Start distributing queries in query_file to nodes whose addresses are
-   stored in node_addr_file.
-*/
 func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
    var err error
    var conn net.Conn
@@ -70,6 +68,7 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
       log.Fatalln("Unable to listen to", c.addr)
    }
 
+   // Connect to nodes and distribute queries
    go func(ifile, qfile string) {
       for _, addr := range(c.node_addresses) {
          conn, e := net.Dial("tcp", addr)
@@ -105,6 +104,7 @@ func (c *Client) handle_connection(conn net.Conn) {
          log.Fatalln("Missing query id", items)
       }
       if c.collector == nil {
+         // to do: save to output file.
          fmt.Println(">", qid, result)
       } else {
          c.collector.ProcessResult(qid, result)

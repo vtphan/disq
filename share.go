@@ -1,3 +1,6 @@
+/*
+Author: Vinhthuy Phan, 2014
+*/
 package disq
 
 import (

@@ -3,7 +3,6 @@ package main
 import (
    "github.com/vtphan/disq"
    "fmt"
-   // "os"
 )
 
 type Collector struct {}
@@ -14,5 +13,5 @@ func (c *Collector) ProcessResult(qid int, result string) {
 
 func main() {
    c := disq.NewClient("config-client.json")
-   c.Start("index", "queries.txt", nil) // &Collector{})
+   c.Start("index", "queries.txt", &Collector{})
 }

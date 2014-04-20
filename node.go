@@ -1,7 +1,5 @@
 /*
-Author: Vinhthuy Phan
-- nodes form a clique.
-- multiple clients.
+Author: Vinhthuy Phan, 2014
 */
 package disq
 
@@ -12,7 +10,6 @@ import (
    "bufio"
    "strings"
    "strconv"
-   // "time"
 )
 
 type Worker interface {
