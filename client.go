@@ -24,6 +24,8 @@ type Client struct {
    nodes          map[string]net.Conn
    output_dir     string
    node_addresses []string
+   count          chan int
+   done_dist      chan bool
 }
 
 
@@ -35,14 +37,15 @@ func (c *Client) send_queries(query_file string) {
    defer file.Close()
    scanner := bufio.NewScanner(file)
    stop := false
-   i := 0
+   var count int
    for ! stop {
       for _, node := range c.nodes {
          if stop {
             break
          } else if scanner.Scan() {
-            fmt.Fprintf(node, "query %s %d %s\n", c.addr, i, scanner.Text())
-            i++
+            count =<- c.count
+            fmt.Fprintf(node,"query %s %d %s\n",c.addr,count,scanner.Text())
+            c.count <- count + 1
          } else {
             stop = true
          }
@@ -55,6 +58,9 @@ func NewClient(config_file string) *Client {
    c := new(Client)
    c.nodes = make(map[string]net.Conn)
    c.addr, c.node_addresses, c.output_dir = ReadClientConfig(config_file)
+   c.done_dist = make(chan bool, 1)
+   c.count = make(chan int, 1)
+   c.count <- 0
    return c
 }
 
@@ -79,13 +85,17 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
          }
       }
       c.send_queries(qfile)
+      c.done_dist <- true
    }(index_file, query_file)
 
    // Now listen for response from nodes
-   for {
+   stop := false
+   for !stop {
       conn, err = c.listener.Accept()
       if err == nil {
          go c.handle_connection(conn)
+      } else {
+         stop = true
       }
    }
 }
@@ -93,9 +103,8 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
 
 func (c *Client) handle_connection(conn net.Conn) {
    var items []string
-   stop := false
    scanner := bufio.NewScanner(conn)
-   for !stop && scanner.Scan() {
+   for scanner.Scan() {
       mesg := strings.Trim(scanner.Text(), "\n\r")
       items = strings.SplitN(mesg, " ", 2)
       qid, err := strconv.Atoi(items[0])
@@ -109,7 +118,22 @@ func (c *Client) handle_connection(conn net.Conn) {
       } else {
          c.collector.ProcessResult(qid, result)
       }
+      c.count <- (<-c.count)-1
+      c.check_to_close()
    }
 }
 
 
+func (c *Client) check_to_close(){
+   count :=<- c.count
+   done_dist :=<- c.done_dist
+   if done_dist && count == 0 {
+      for _, node := range c.nodes {
+         fmt.Fprintf(node, "stop %s\n", c.addr)
+         node.Close()
+      }
+      c.listener.Close()
+   }
+   c.count <- count
+   c.done_dist <- done_dist
+}

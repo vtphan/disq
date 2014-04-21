@@ -98,10 +98,14 @@ func (n *Node) handle_connection(conn net.Conn) {
             fmt.Fprintf(c.client_conn, "%d %s\n", query_id, result)
          }(items[1], qid, items[3])
 
+      case "stop":
+         n.clients[items[1]].client_conn.Close()
+
       default:
          log.Fatalf("[%s] unknown message type: %s\n", n.addr, mesg)
       }
    }
+   // log.Println("connection closed")
 }
 
 

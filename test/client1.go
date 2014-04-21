@@ -2,7 +2,6 @@ package main
 
 import (
    "github.com/vtphan/disq"
-   "fmt"
 )
 
 func main() {
