@@ -88,7 +88,7 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
       c.done_dist <- true
    }(index_file, query_file)
 
-   // Now listen for response from nodes
+   // Listen for responses from nodes
    stop := false
    for !stop {
       conn, err = c.listener.Accept()
@@ -124,6 +124,7 @@ func (c *Client) handle_connection(conn net.Conn) {
 }
 
 
+// Shut down if c.count decremented to 0 and all queries are distributed
 func (c *Client) check_to_close(){
    count :=<- c.count
    done_dist :=<- c.done_dist
@@ -134,6 +135,7 @@ func (c *Client) check_to_close(){
       }
       c.listener.Close()
    }
+   // restore values to channels
    c.count <- count
    c.done_dist <- done_dist
 }

@@ -107,8 +107,3 @@ func (n *Node) handle_connection(conn net.Conn) {
    }
    // log.Println("connection closed")
 }
-
-
-
-
-
