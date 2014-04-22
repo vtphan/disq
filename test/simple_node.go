@@ -11,20 +11,20 @@ var (
    join_address = ""
 )
 
-type myWorker struct { }
+type Worker struct { }
 
-func (m *myWorker) ProcessQuery(qid int, query string) string {
+func (m *Worker) ProcessQuery(qid int, query string) string {
    mesg := fmt.Sprintf("[%d Eatching %s]", qid, query)
    return mesg
 }
 
-func Setup(filename string) disq.Worker {
-   fmt.Println("\tSimpleNode.Setup", filename)
-   w := new(myWorker)
+func NewWorker(filename string) disq.Worker {
+   fmt.Println("\tSimpleNode.NewWorker", filename)
+   w := new(Worker)
    return w
 }
 
 func main() {
-   node := disq.NewNode(os.Args[1], Setup)
+   node := disq.NewNode(os.Args[1], NewWorker)
    node.Start()
 }

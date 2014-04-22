@@ -124,7 +124,8 @@ func (c *Client) handle_connection(conn net.Conn) {
 }
 
 
-// Shut down if c.count decremented to 0 and all queries are distributed
+// Close if all queries are distributed and last query has been processed
+// i.e. when c.done_dist==true && c.count==0
 func (c *Client) check_to_close(){
    count :=<- c.count
    done_dist :=<- c.done_dist
