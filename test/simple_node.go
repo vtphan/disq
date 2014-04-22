@@ -6,11 +6,6 @@ import (
    "os"
 )
 
-var (
-   address = ""
-   join_address = ""
-)
-
 type Worker struct { }
 
 func (m *Worker) ProcessQuery(qid int, query string) string {
