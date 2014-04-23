@@ -6,20 +6,20 @@ import (
    "os"
 )
 
-type Worker struct { }
+type MyWorker struct { }
 
-func (m *Worker) ProcessQuery(qid int, query string) string {
+func (m *MyWorker) ProcessQuery(qid int, query string) string {
    mesg := fmt.Sprintf("[%d Eatching %s]", qid, query)
    return mesg
 }
 
-func NewWorker(filename string) disq.Worker {
-   fmt.Println("\tSimpleNode.NewWorker", filename)
-   w := new(Worker)
+func Configure(input_file string) disq.Worker {
+   fmt.Println("\tSimpleNode.Configure", input_file)
+   w := new(MyWorker)
    return w
 }
 
 func main() {
-   node := disq.NewNode(os.Args[1], NewWorker)
+   node := disq.NewNode(os.Args[1], Configure)
    node.Start()
 }

@@ -81,12 +81,12 @@ func (n *Node) handle_connection(conn net.Conn) {
       switch (items[0]) {
       case "handshake":
          // fmt.Println("handshake", items[1])
-         addr, query_file := items[1], items[2]
+         addr, input_file := items[1], items[2]
          conn, err := net.Dial("tcp", addr)
          if err != nil {
             log.Println(err)
          } else {
-            n.clients[addr] = WorkerStub{conn, n.init_worker(query_file)}
+            n.clients[addr] = WorkerStub{conn, n.init_worker(input_file)}
          }
 
       case "query":  // Process query and send result back to client
