@@ -3,11 +3,13 @@ Disq - distributed querying
 
 #### Server
 ```
-	go run simple_node.go config1.json
-	go run simple_node.go config2.json
+	cd example
+	go run node.go config-node1.json
+	go run node.go config-node2.json
 ```
 
 #### Client
 ```
-	go run client1.go
+	cd example
+	go run client.go config-client.json
 ```
