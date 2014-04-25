@@ -10,6 +10,7 @@ import (
    "bufio"
    "strings"
    "strconv"
+   "sync"
 )
 
 type Worker interface {
@@ -26,14 +27,14 @@ type Node struct {
    data_dir       string
    listener       net.Listener
    init_worker    func(string) Worker
-   clients        map[string]WorkerStub
+   // clients        map[string]WorkerStub
 
 }
 
 func NewNode(config_file string, setup func(string) Worker) *Node {
    n := new(Node)
    n.init_worker = setup
-   n.clients = make(map[string]WorkerStub)
+   // n.clients = make(map[string]WorkerStub)
    n.addr, n.data_dir = ReadNodeConfig(config_file)
 
    var err error
@@ -47,9 +48,9 @@ func NewNode(config_file string, setup func(string) Worker) *Node {
 
 func (n *Node) Close() {
    n.listener.Close()
-   for _, c := range(n.clients) {
-      c.client_conn.Close()
-   }
+   // for _, c := range(n.clients) {
+   //    c.client_conn.Close()
+   // }
 }
 
 /*
@@ -67,43 +68,45 @@ func (n *Node) Start() {
 }
 
 /*
-   Each message sent to a node consists of 2 space-separated strings:
-      1. type: join, update, request
-      2. address of the party that sends the message.
+   Each connection is dedicated to each client
 */
 func (n *Node) handle_connection(conn net.Conn) {
-   scanner := bufio.NewScanner(conn)
+   var worker Worker
+   var wg sync.WaitGroup
    var items []string
+   var qid int
+   var result string
+   no_more_queries := make(chan bool)
+   scanner := bufio.NewScanner(conn)
+
+   go func() {
+      <-no_more_queries
+      wg.Wait()
+      conn.Close()
+   }()
+
    for scanner.Scan() {
-      mesg := strings.Trim(scanner.Text(), "\n\r")
-      items = strings.Split(mesg, " ")
+      items = strings.Split(strings.Trim(scanner.Text(), "\n\r"), " ")
 
       switch (items[0]) {
       case "handshake":
-         // fmt.Println("handshake", items[1])
-         addr, input_file := items[1], items[2]
-         conn, err := net.Dial("tcp", addr)
-         if err != nil {
-            log.Println(err)
-         } else {
-            n.clients[addr] = WorkerStub{conn, n.init_worker(input_file)}
-         }
+         worker = n.init_worker(items[1])
 
-      case "query":  // Process query and send result back to client
-         qid, _ := strconv.Atoi(items[2])
+      case "query":
+         qid, _ = strconv.Atoi(items[1])
+         wg.Add(1)
+         go func(query_id int, query string) {
+            // fmt.Println("Got", query_id, query)
+            defer wg.Done()
+            result = worker.ProcessQuery(query_id, query)
+            fmt.Fprintf(conn, "%d %s\n", query_id, result)
+         }(qid, items[2])
 
-         go func(client_addr string, query_id int, query string) {
-            c := n.clients[client_addr]
-            result := c.worker.ProcessQuery(query_id, query)
-            fmt.Fprintf(c.client_conn, "%d %s\n", query_id, result)
-         }(items[1], qid, items[3])
-
-      case "stop":
-         n.clients[items[1]].client_conn.Close()
+      case "done":
+         no_more_queries <- true
 
       default:
-         log.Fatalf("[%s] unknown message type: %s\n", n.addr, mesg)
+         log.Fatalln("Unknown message type", items)
       }
    }
-   // log.Println("connection closed")
 }

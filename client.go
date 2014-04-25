@@ -11,23 +11,95 @@ import (
    "bufio"
    "os"
    "strconv"
+   "sync"
 )
 
 type CollectorInterface interface {
    ProcessResult(qid int, result string)
 }
 
-type Client struct {
-   addr           string
-   listener       net.Listener
-   collector      CollectorInterface
-   nodes          map[string]net.Conn
-   output_dir     string
-   node_addresses []string
-   count          chan int
-   done_dist      chan bool
+type NodeStub struct {
+   addr  string
+   conn  net.Conn
 }
 
+type Client struct {
+   nodes          []NodeStub
+   collector      CollectorInterface
+   config_file    string
+}
+
+func NewClient(config_file string) *Client {
+   c := new(Client)
+   c.config_file = config_file
+   return c
+}
+
+func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
+   c.collector = collector
+
+   done_connection := make(chan bool)
+
+   // 1. Connect to nodes, and distribute queries
+   go func(ifile, qfile string) {
+      c.connect(ifile)
+      done_connection <- true
+      c.send_queries(qfile)
+   }(index_file, query_file)
+
+   // 2. Collect results
+   results := make(chan string)
+   <-done_connection
+   c.collect_results(results)
+
+   // 3. Process results
+   for r := range(results) {
+      items := strings.SplitN(r, " ", 2)
+      qid, err := strconv.Atoi(items[0])
+      if err != nil {
+         log.Fatalln("Missing query id", items)
+      }
+      res := items[1]
+      c.collector.ProcessResult(qid, res)
+   }
+}
+
+func (c *Client) collect_results(results chan string) {
+   var wg sync.WaitGroup
+
+   wg.Add(len(c.nodes))
+   for _, node := range(c.nodes) {
+      go func(conn net.Conn) {
+         defer wg.Done()
+         scanner := bufio.NewScanner(conn)
+         for scanner.Scan() {
+            results <- scanner.Text()
+         }
+      }(node.conn)
+   }
+
+   go func() {
+      wg.Wait()
+      close(results)
+   }()
+}
+
+func (c *Client) connect(index_file string) {
+   no_connection := true
+   addresses := ReadClientConfig(c.config_file)
+   for _, addr := range(addresses) {
+      conn, err := net.Dial("tcp", addr)
+      if err == nil {
+         c.nodes = append(c.nodes, NodeStub{addr, conn})
+         fmt.Fprintf(conn, "handshake %s\n", index_file)
+         log.Println("connect to", addr)
+         no_connection = false
+      }
+   }
+   if no_connection {
+      log.Fatalln("Cannot connect to any node.")
+   }
+}
 
 func (c *Client) send_queries(query_file string) {
    file, e := os.Open(query_file)
@@ -36,107 +108,23 @@ func (c *Client) send_queries(query_file string) {
    }
    defer file.Close()
    scanner := bufio.NewScanner(file)
-   stop := false
-   var count int
-   for ! stop {
-      for _, node := range c.nodes {
-         if stop {
-            break
-         } else if scanner.Scan() {
-            count =<- c.count
-            fmt.Fprintf(node,"query %s %d %s\n",c.addr,count,scanner.Text())
-            c.count <- count + 1
+   for stop,count:=false,0; !stop; {
+      for _, node := range(c.nodes) {
+         if scanner.Scan() {
+            query := scanner.Text()
+            // fmt.Println("Send",query)
+            fmt.Fprintf(node.conn,"query %d %s\n",count,query)
+            count++
          } else {
             stop = true
+            break
          }
       }
    }
-}
-
-
-func NewClient(config_file string) *Client {
-   c := new(Client)
-   c.nodes = make(map[string]net.Conn)
-   c.addr, c.node_addresses, c.output_dir = ReadClientConfig(config_file)
-   c.done_dist = make(chan bool, 1)
-   c.count = make(chan int, 1)
-   c.count <- 0
-   return c
-}
-
-func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
-   var err error
-   var conn net.Conn
-
-   c.collector = collector
-   c.listener, err = net.Listen("tcp", c.addr)
-   if err != nil {
-      log.Fatalln("Unable to listen to", c.addr)
-   }
-
-   // Connect to nodes and distribute queries
-   go func(ifile, qfile string) {
-      for _, addr := range(c.node_addresses) {
-         conn, e := net.Dial("tcp", addr)
-         if e == nil {
-            c.nodes[addr] = conn
-            fmt.Fprintf(conn, "handshake %s %s\n", c.addr, ifile)
-            log.Println("connect to",addr)
-         }
-      }
-      c.send_queries(qfile)
-      c.done_dist <- true
-   }(index_file, query_file)
-
-   // Listen for responses from nodes
-   stop := false
-   for !stop {
-      conn, err = c.listener.Accept()
-      if err == nil {
-         go c.handle_connection(conn)
-      } else {
-         stop = true
-      }
+   for _, node := range(c.nodes) {
+      fmt.Fprintf(node.conn, "done\n")
    }
 }
 
 
-func (c *Client) handle_connection(conn net.Conn) {
-   var items []string
-   scanner := bufio.NewScanner(conn)
-   for scanner.Scan() {
-      mesg := strings.Trim(scanner.Text(), "\n\r")
-      items = strings.SplitN(mesg, " ", 2)
-      qid, err := strconv.Atoi(items[0])
-      result := items[1]
-      if err != nil {
-         log.Fatalln("Missing query id", items)
-      }
-      if c.collector == nil {
-         // to do: save to output file.
-         fmt.Println(">", qid, result)
-      } else {
-         c.collector.ProcessResult(qid, result)
-      }
-      c.count <- (<-c.count)-1
-      c.check_to_close()
-   }
-}
 
-
-// Close if all queries are distributed and last query has been processed
-// i.e. when c.done_dist==true && c.count==0
-func (c *Client) check_to_close(){
-   count :=<- c.count
-   done_dist :=<- c.done_dist
-   if done_dist && count == 0 {
-      for _, node := range c.nodes {
-         fmt.Fprintf(node, "stop %s\n", c.addr)
-         node.Close()
-      }
-      c.listener.Close()
-   }
-   // restore values to channels
-   c.count <- count
-   c.done_dist <- done_dist
-}
