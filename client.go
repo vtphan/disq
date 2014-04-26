@@ -27,11 +27,13 @@ type Client struct {
    nodes          []NodeStub
    collector      CollectorInterface
    config_file    string
+   send_limit     int
 }
 
 func NewClient(config_file string) *Client {
    c := new(Client)
    c.config_file = config_file
+   c.send_limit = 1000
    return c
 }
 
@@ -107,13 +109,16 @@ func (c *Client) send_queries(query_file string) {
       log.Fatalln("Unable to open file", query_file)
    }
    defer file.Close()
+   send_lim := make(chan int, c.send_limit)
+
    scanner := bufio.NewScanner(file)
    for stop,count:=false,0; !stop; {
       for _, node := range(c.nodes) {
          if scanner.Scan() {
             query := scanner.Text()
-            // fmt.Println("Send",query)
+            send_lim <- 1
             fmt.Fprintf(node.conn,"query %d %s\n",count,query)
+            <-send_lim
             count++
          } else {
             stop = true
