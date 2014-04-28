@@ -14,5 +14,5 @@ func (c *Collector) ProcessResult(qid int, result string) {
 
 func main() {
    c := disq.NewClient(os.Args[1])
-   c.Start("index", "queries.txt", &Collector{})
+   c.Start("index", os.Args[2], &Collector{})
 }

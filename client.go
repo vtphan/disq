@@ -12,6 +12,7 @@ import (
    "os"
    "strconv"
    "sync"
+   // "time"
 )
 
 type CollectorInterface interface {
@@ -118,6 +119,8 @@ func (c *Client) send_queries(query_file string) {
             fmt.Fprintf(node.conn,"query %d %s\n",count,query)
             <-send_lim
             count++
+            // fmt.Printf("query %d %s\n",count,query)
+            // time.Sleep(2 * time.Second)
          } else {
             stop = true
             break

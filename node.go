@@ -58,6 +58,7 @@ func (n *Node) Start() {
    log.Println("Listening at", n.addr)
    for {
       conn, err := n.listener.Accept()
+      fmt.Println("Starting to accept queries from client", conn)
       if err == nil {
          go n.handle_connection(conn)
       }
@@ -77,8 +78,8 @@ func (n *Node) handle_connection(conn net.Conn) {
    scanner := bufio.NewScanner(conn)
 
    go func() {
-      <-no_more_queries
-      wg.Wait()
+      <-no_more_queries    // all queries have been received
+      wg.Wait()            // all queries have been processed
       conn.Close()
    }()
 

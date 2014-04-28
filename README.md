@@ -11,5 +11,5 @@ Disq - distributed querying
 #### Client
 ```
 	cd example
-	go run client.go config-client.json
+	go run client.go config-client.json foods.txt
 ```
