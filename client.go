@@ -39,7 +39,7 @@ func NewClient(config_file string) *Client {
 func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
    c.collector = collector
 
-   // Connect, distribute queries
+   // Connect and distribute queries
    c.connect(index_file)
    go func(qfile string) {
       c.send_queries(qfile)
@@ -47,9 +47,7 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
 
    // Collect and process results
    results := make(chan string)
-   go func() {
-      c.collect_results(results)
-   }()
+   c.collect_results(results)
 
    for r := range(results) {
       items := strings.SplitN(r, " ", 2)
@@ -66,6 +64,12 @@ func (c *Client) collect_results(results chan string) {
    var wg sync.WaitGroup
 
    wg.Add(len(c.nodes))
+
+   go func() {
+      wg.Wait()
+      close(results)
+   }()
+
    for _, node := range(c.nodes) {
       go func(conn net.Conn) {
          defer wg.Done()
@@ -73,11 +77,9 @@ func (c *Client) collect_results(results chan string) {
          for scanner.Scan() {
             results <- scanner.Text()
          }
+         conn.Close()
       }(node.conn)
    }
-
-   wg.Wait()
-   close(results)
 }
 
 func (c *Client) connect(index_file string) {
