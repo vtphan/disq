@@ -39,19 +39,18 @@ func NewClient(config_file string) *Client {
 func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
    c.collector = collector
 
-   // 0. Connect to nodes
+   // Connect, distribute queries
    c.connect(index_file)
-
-   // 1. Connect to nodes, and distribute queries
    go func(qfile string) {
       c.send_queries(qfile)
    }(query_file)
 
-   // 2. Collect results
+   // Collect and process results
    results := make(chan string)
-   c.collect_results(results)
+   go func() {
+      c.collect_results(results)
+   }()
 
-   // 3. Process results
    for r := range(results) {
       items := strings.SplitN(r, " ", 2)
       qid, err := strconv.Atoi(items[0])
@@ -77,10 +76,8 @@ func (c *Client) collect_results(results chan string) {
       }(node.conn)
    }
 
-   go func() {
-      wg.Wait()
-      close(results)
-   }()
+   wg.Wait()
+   close(results)
 }
 
 func (c *Client) connect(index_file string) {

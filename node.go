@@ -17,24 +17,16 @@ type Worker interface {
    ProcessQuery(qid int, query string) string
 }
 
-type WorkerStub struct {
-   client_conn    net.Conn
-   worker         Worker
-}
-
 type Node struct {
    addr           string
    data_dir       string
    listener       net.Listener
    init_worker    func(string) Worker
-   // clients        map[string]WorkerStub
-
 }
 
 func NewNode(config_file string, setup func(string) Worker) *Node {
    n := new(Node)
    n.init_worker = setup
-   // n.clients = make(map[string]WorkerStub)
    n.addr, n.data_dir = ReadNodeConfig(config_file)
 
    var err error
@@ -50,32 +42,20 @@ func (n *Node) Close() {
    n.listener.Close()
 }
 
-/*
-   Join node, if addr is not taken, then be the first node.
-*/
 func (n *Node) Start() {
    defer n.Close()
    log.Println("Listening at", n.addr)
    for {
       conn, err := n.listener.Accept()
-      fmt.Println("Starting to accept queries from client", conn)
       if err == nil {
          go n.handle_connection(conn)
       }
    }
 }
 
-/*
-   Each connection is dedicated to each client
-*/
 func (n *Node) handle_connection(conn net.Conn) {
-   var worker Worker
    var wg sync.WaitGroup
-   var items []string
-   var qid int
-   var result string
    no_more_queries := make(chan bool)
-   scanner := bufio.NewScanner(conn)
 
    go func() {
       <-no_more_queries    // all queries have been received
@@ -83,6 +63,11 @@ func (n *Node) handle_connection(conn net.Conn) {
       conn.Close()
    }()
 
+   var worker Worker       // a worker is allocated for each client/conn
+   var items []string
+   var qid int
+   var result string
+   scanner := bufio.NewScanner(conn)
    for scanner.Scan() {
       items = strings.Split(strings.Trim(scanner.Text(), "\n\r"), " ")
 
