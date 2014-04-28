@@ -9,7 +9,8 @@ import (
 type MyWorker struct { }
 
 func (m *MyWorker) ProcessQuery(qid int, query string) string {
-   mesg := fmt.Sprintf("[%d Eatching %s]", qid, query)
+   mesg := fmt.Sprintf("[%d Process query %s]", qid, query)
+   fmt.Println(mesg)
    return mesg
 }
 

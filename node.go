@@ -48,9 +48,6 @@ func NewNode(config_file string, setup func(string) Worker) *Node {
 
 func (n *Node) Close() {
    n.listener.Close()
-   // for _, c := range(n.clients) {
-   //    c.client_conn.Close()
-   // }
 }
 
 /*

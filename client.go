@@ -40,18 +40,16 @@ func NewClient(config_file string) *Client {
 func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
    c.collector = collector
 
-   done_connection := make(chan bool)
+   // 0. Connect to nodes
+   c.connect(index_file)
 
    // 1. Connect to nodes, and distribute queries
-   go func(ifile, qfile string) {
-      c.connect(ifile)
-      done_connection <- true
+   go func(qfile string) {
       c.send_queries(qfile)
-   }(index_file, query_file)
+   }(query_file)
 
    // 2. Collect results
    results := make(chan string)
-   <-done_connection
    c.collect_results(results)
 
    // 3. Process results
