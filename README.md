@@ -5,14 +5,14 @@ Disq - distributed querying
 
 A client distributes queries to multiple nodes.  To use this architecture, users must implement a client and a node.  The implementation must follow the requirements of disq.Client and disq.Worker, respectively.
 
-#### Server
+#### Run a bunch of servers
 ```
 	cd example
 	go run node.go config-node1.json
 	go run node.go config-node2.json
 ```
 
-#### Client
+#### Run a client
 ```
 	cd example
 	go run client.go config-client.json foods.txt
