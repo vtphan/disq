@@ -15,21 +15,22 @@ import (
 
 type Worker interface {
    ProcessQuery(qid int, query string) string
+   New(input_file string) Worker
 }
 
 type Node struct {
    addr           string
    data_dir       string
    listener       net.Listener
-   init_worker    func(string) Worker
+   init_worker    Worker
 }
 
-func NewNode(config_file string, setup func(string) Worker) *Node {
+func NewNode(config_file string, init_worker Worker) *Node {
+   var err error
    n := new(Node)
-   n.init_worker = setup
+   n.init_worker = init_worker
    n.addr, n.data_dir = ReadNodeConfig(config_file)
 
-   var err error
    n.listener, err = net.Listen("tcp", n.addr)
    if err != nil {
       log.Fatalln("Unable to listen to", n.addr)
@@ -73,7 +74,7 @@ func (n *Node) handle_connection(conn net.Conn) {
 
       switch (items[0]) {
       case "handshake":
-         worker = n.init_worker(items[1])
+         worker = n.init_worker.New(items[1])
 
       case "query":
          qid, _ = strconv.Atoi(items[1])
