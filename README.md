@@ -3,7 +3,7 @@ Disq - distributed querying
 
 #### Architecture overview
 
-A client distributes queries to multiple nodes.  To use this architecture, users must implement a client and a node.  The implementation must follow the requirements of disq.Client and disq.Node, respectively.
+A client distributes queries to multiple nodes.  To use this architecture, users must implement a client and a node.  The implementation must follow the requirements of disq.Client and disq.Worker, respectively.
 
 #### Server
 ```
@@ -20,7 +20,10 @@ A client distributes queries to multiple nodes.  To use this architecture, users
 
 #### Interface to node
 
-A node must implement the disq.Worker interface. This interface requires two methods: (1) ProcessQuery and (2) New, which returns a struct that satisfies the interface disq.Worker.
+A node must implement the disq.Worker interface. This interface requires two methods: (1) ProcessQuery(qid int, query string) string and (2) New(input_file string) disq.Worker.
+
+Method New should return a pointer to struct of the same type.
+
 
 #### Interface to client
 
