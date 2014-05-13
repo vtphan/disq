@@ -74,10 +74,10 @@ func (c *Client) collect_results(results chan string) {
       go func(conn net.Conn) {
          defer wg.Done()
          scanner := bufio.NewScanner(conn)
+         defer conn.Close()
          for scanner.Scan() {
             results <- scanner.Text()
          }
-         conn.Close()
       }(node.conn)
    }
 }
