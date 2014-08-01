@@ -12,7 +12,7 @@ import (
    "os"
    "strconv"
    "sync"
-   "time"
+   "math"
 )
 
 type CollectorInterface interface {
@@ -42,6 +42,7 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
 
    // Connect and distribute queries
    c.connect(index_file)
+   fmt.Println(c.mode)
    if c.mode == "1" {
       go func(qfile string) {
          c.distribute_queries(qfile)
@@ -117,12 +118,13 @@ func (c *Client) distribute_queries(query_file string) {
    scanner := bufio.NewScanner(file)
    for stop,count:=false,0; !stop; {
       if scanner.Scan() {
-         query := scanner.Text()
-         for _, node := range(c.nodes) {
-            fmt.Fprintf(node.conn,"query %d %s\n",count,query)
+         if math.Mod(float64(count),4) ==1 {
+            query := scanner.Text()
+            for _, node := range(c.nodes) {
+               fmt.Fprintf(node.conn,"query %d %s\n",count/4,query)
+            }
          }
          count++
-         time.Sleep(2 * time.Second)
       } else {
          stop = true
          break
@@ -145,10 +147,11 @@ func (c *Client) broadcast_queries(query_file string) {
    for stop,count:=false,0; !stop; {
       for _, node := range(c.nodes) {
          if scanner.Scan() {
-            query := scanner.Text()
-            fmt.Fprintf(node.conn,"query %d %s\n",count,query)
+            if math.Mod(float64(count),4) ==1 {
+               query := scanner.Text()
+               fmt.Fprintf(node.conn,"query %d %s\n",count/4,query)
+            }
             count++
-            time.Sleep(2 * time.Second)
          } else {
             stop = true
             break
