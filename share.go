@@ -16,6 +16,7 @@ type NodeConfig struct {
 
 type ClientConfig struct {
   Nodes       []string
+  Flag        string  // 0: distributed; 1: broadcast
 }
 
 func ReadNodeConfig(json_file string) (string, string) {
@@ -30,7 +31,7 @@ func ReadNodeConfig(json_file string) (string, string) {
   return c.Address, c.DataDir
 }
 
-func ReadClientConfig(json_file string) []string {
+func ReadClientConfig(json_file string) ([]string, string) {
   file, err := os.Open(json_file)
   if err != nil {
     log.Fatalln("Unable to open", json_file)
@@ -39,7 +40,7 @@ func ReadClientConfig(json_file string) []string {
   decoder := json.NewDecoder(file)
   c := &ClientConfig{}
   decoder.Decode(&c)
-  return c.Nodes
+  return c.Nodes, c.Flag
 }
 
 // func WriteConfig(json_file string, addrs string) {

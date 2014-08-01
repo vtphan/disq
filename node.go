@@ -31,13 +31,16 @@ func NewNode(config_file string, init_worker Worker) *Node {
    n.init_worker = init_worker
    n.addr, n.data_dir = ReadNodeConfig(config_file)
 
+   fmt.Println(n.addr)
+   fmt.Println(n.data_dir)
+   fmt.Println(n.init_worker)
+   
    n.listener, err = net.Listen("tcp", n.addr)
    if err != nil {
       log.Fatalln("Unable to listen to", n.addr)
    }
    return n
 }
-
 
 func (n *Node) Close() {
    n.listener.Close()

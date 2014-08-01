@@ -12,7 +12,7 @@ import (
    "os"
    "strconv"
    "sync"
-   // "time"
+   "time"
 )
 
 type CollectorInterface interface {
@@ -28,6 +28,7 @@ type Client struct {
    nodes          []NodeStub
    collector      CollectorInterface
    config_file    string
+   mode        string  // 0: distributed; 1: broadcast
 }
 
 func NewClient(config_file string) *Client {
@@ -41,9 +42,15 @@ func (c *Client) Start(index_file, query_file string, collector CollectorInterfa
 
    // Connect and distribute queries
    c.connect(index_file)
-   go func(qfile string) {
-      c.send_queries(qfile)
-   }(query_file)
+   if c.mode == "1" {
+      go func(qfile string) {
+         c.distribute_queries(qfile)
+      }(query_file)
+   } else {
+      go func(qfile string) {
+         c.broadcast_queries(qfile)
+      }(query_file)
+   }
 
    // Collect and process results
    results := make(chan string)
@@ -74,17 +81,17 @@ func (c *Client) collect_results(results chan string) {
       go func(conn net.Conn) {
          defer wg.Done()
          scanner := bufio.NewScanner(conn)
-         defer conn.Close()
          for scanner.Scan() {
             results <- scanner.Text()
          }
+         conn.Close()
       }(node.conn)
    }
 }
 
 func (c *Client) connect(index_file string) {
    no_connection := true
-   addresses := ReadClientConfig(c.config_file)
+   addresses, flag := ReadClientConfig(c.config_file)
    for _, addr := range(addresses) {
       conn, err := net.Dial("tcp", addr)
       if err == nil {
@@ -94,12 +101,40 @@ func (c *Client) connect(index_file string) {
          no_connection = false
       }
    }
+   c.mode = flag
    if no_connection {
       log.Fatalln("Cannot connect to any node.")
    }
 }
 
-func (c *Client) send_queries(query_file string) {
+func (c *Client) distribute_queries(query_file string) {
+   file, e := os.Open(query_file)
+   if e != nil {
+      log.Fatalln("Unable to open file", query_file)
+   }
+   defer file.Close()
+
+   scanner := bufio.NewScanner(file)
+   for stop,count:=false,0; !stop; {
+      if scanner.Scan() {
+         query := scanner.Text()
+         for _, node := range(c.nodes) {
+            fmt.Fprintf(node.conn,"query %d %s\n",count,query)
+         }
+         count++
+         time.Sleep(2 * time.Second)
+      } else {
+         stop = true
+         break
+      }
+   }
+
+   for _, node := range(c.nodes) {
+      fmt.Fprintf(node.conn, "done\n")
+   }
+}
+
+func (c *Client) broadcast_queries(query_file string) {
    file, e := os.Open(query_file)
    if e != nil {
       log.Fatalln("Unable to open file", query_file)
@@ -113,18 +148,15 @@ func (c *Client) send_queries(query_file string) {
             query := scanner.Text()
             fmt.Fprintf(node.conn,"query %d %s\n",count,query)
             count++
-            // fmt.Printf("query %d %s\n",count,query)
-            // time.Sleep(2 * time.Second)
+            time.Sleep(2 * time.Second)
          } else {
             stop = true
             break
          }
       }
    }
+
    for _, node := range(c.nodes) {
       fmt.Fprintf(node.conn, "done\n")
    }
 }
-
-
-
