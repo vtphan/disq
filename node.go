@@ -71,6 +71,7 @@ func (n *Node) handle_connection(conn net.Conn) {
    var items []string
    var qid int
    var result string
+   routinenum := make(chan int, 1)
    scanner := bufio.NewScanner(conn)
    for scanner.Scan() {
       items = strings.Split(strings.Trim(scanner.Text(), "\n\r"), " ")
@@ -83,10 +84,12 @@ func (n *Node) handle_connection(conn net.Conn) {
          qid, _ = strconv.Atoi(items[1])
          wg.Add(1)
          go func(query_id int, query string) {
+            routinenum <- 1
             // fmt.Println("Got", query_id, query)
             defer wg.Done()
             result = worker.ProcessQuery(query_id, query)
             fmt.Fprintf(conn, "%d %s\n", query_id, result)
+            <- routinenum
          }(qid, items[2])
 
       case "done":
