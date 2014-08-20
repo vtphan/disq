@@ -14,10 +14,13 @@ import (
 )
 
 type Worker interface {
-   ProcessQuery(qid int, query string) string
+   ProcessQuery(query string, i int) string
    New(input_file string) Worker
 }
-
+type Query struct{
+   Query_id int
+   Query_co string
+}
 type Node struct {
    addr           string
    data_dir       string
@@ -63,6 +66,7 @@ func (n *Node) handle_connection(conn net.Conn) {
 
    go func() {
       <-no_more_queries    // all queries have been received
+      fmt.Println("close")
       wg.Wait()            // all queries have been processed
       conn.Close()
    }()
@@ -71,26 +75,40 @@ func (n *Node) handle_connection(conn net.Conn) {
    var items []string
    var qid int
    var result string
-   routinenum := make(chan int, 1)
+   var routinenum = 8
+   queries := make(chan Query)
    scanner := bufio.NewScanner(conn)
    for scanner.Scan() {
       items = strings.Split(strings.Trim(scanner.Text(), "\n\r"), " ")
-
       switch (items[0]) {
       case "handshake":
+         fmt.Println(items[1])
          worker = n.init_worker.New(items[1])
 
       case "query":
          qid, _ = strconv.Atoi(items[1])
          wg.Add(1)
-         go func(query_id int, query string) {
-            routinenum <- 1
-            // fmt.Println("Got", query_id, query)
-            defer wg.Done()
-            result = worker.ProcessQuery(query_id, query)
-            fmt.Fprintf(conn, "%d %s\n", query_id, result)
-            <- routinenum
-         }(qid, items[2])
+
+         go func(query_id int, query string, queries chan Query) {
+            query_info := Query{query_id, query}
+            queries <- query_info
+         }(qid, items[2], queries)
+
+         for mm := 0; mm < routinenum; mm++ {
+            fmt.Println("routinenum",routinenum)
+            fmt.Println("0:",mm)
+            go func(queries chan Query, m int) {
+               fmt.Println("1:",m)
+               defer wg.Done()
+               for query_info := range queries {
+                  fmt.Println("2:",m)
+                  query_id := query_info.Query_id
+                  query := query_info.Query_co
+                  result = worker.ProcessQuery(query, m)
+                  fmt.Fprintf(conn, "%d %s\n", query_id, result)
+               }
+            }(queries, mm)
+         }
 
       case "done":
          no_more_queries <- true

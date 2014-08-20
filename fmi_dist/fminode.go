@@ -24,7 +24,7 @@ func format_result(index string, intarray []int) []byte{
    return []byte(str)
 }
 
-func (m *MyWorker) ProcessQuery(qid int, query string) string {
+func (m *MyWorker) ProcessQuery(query string) string {
    result := fmi.Search(m.idx, []byte(query))
    fmt.Println(format_result(query, result))
    return string(format_result(query, result))

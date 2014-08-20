@@ -9,13 +9,12 @@ import (
    "fmt"
    "strings"
    "bufio"
-   "os"
    "strconv"
    "sync"
-   "math"
 )
 
 type CollectorInterface interface {
+   // GenerateQuery()
    ProcessResult(qid int, result string)
 }
 
@@ -37,18 +36,18 @@ func NewClient(config_file string) *Client {
    return c
 }
 
-func (c *Client) Start(index_file, query_file string, collector CollectorInterface) {
+func (c *Client) Start(index_file string, query_file chan Query, collector CollectorInterface) {
    c.collector = collector
 
    // Connect and distribute queries
    c.connect(index_file)
    fmt.Println(c.mode)
    if c.mode == "1" {
-      go func(qfile string) {
+      go func(qfile chan Query) {
          c.distribute_queries(qfile)
       }(query_file)
    } else {
-      go func(qfile string) {
+      go func(qfile chan Query) {
          c.broadcast_queries(qfile)
       }(query_file)
    }
@@ -108,26 +107,10 @@ func (c *Client) connect(index_file string) {
    }
 }
 
-func (c *Client) distribute_queries(query_file string) {
-   file, e := os.Open(query_file)
-   if e != nil {
-      log.Fatalln("Unable to open file", query_file)
-   }
-   defer file.Close()
-
-   scanner := bufio.NewScanner(file)
-   for stop,count:=false,0; !stop; {
-      if scanner.Scan() {
-         if math.Mod(float64(count),4) ==1 {
-            query := scanner.Text()
-            for _, node := range(c.nodes) {
-               fmt.Fprintf(node.conn,"query %d %s\n",count/4,query)
-            }
-         }
-         count++
-      } else {
-         stop = true
-         break
+func (c *Client) distribute_queries(queries chan Query) {
+   for query := range queries {
+      for _, node := range(c.nodes) {
+         fmt.Fprintf(node.conn,"query %d %s\n",query.Query_id, query.Query_co)
       }
    }
 
@@ -136,26 +119,10 @@ func (c *Client) distribute_queries(query_file string) {
    }
 }
 
-func (c *Client) broadcast_queries(query_file string) {
-   file, e := os.Open(query_file)
-   if e != nil {
-      log.Fatalln("Unable to open file", query_file)
-   }
-   defer file.Close()
-
-   scanner := bufio.NewScanner(file)
-   for stop,count:=false,0; !stop; {
-      for _, node := range(c.nodes) {
-         if scanner.Scan() {
-            if math.Mod(float64(count),4) ==1 {
-               query := scanner.Text()
-               fmt.Fprintf(node.conn,"query %d %s\n",count/4,query)
-            }
-            count++
-         } else {
-            stop = true
-            break
-         }
+func (c *Client) broadcast_queries(queries chan Query) {
+   for _, node := range(c.nodes) {
+      for query := range queries {
+         fmt.Fprintf(node.conn,"query %d %s\n", query.Query_id, query.Query_co)
       }
    }
 
