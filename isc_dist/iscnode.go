@@ -8,7 +8,9 @@ import (
    "strings"
    "path"
    "runtime"
+   "encoding/gob"
    "fmt"
+   "bytes"
 )
 
 type MyWorker struct { 
@@ -19,40 +21,37 @@ type MyWorker struct {
 
 // var idx *fmi.Index
 
-func format_result(intarray []int) []byte{
-   var str string
-   for i := 0; i < len(intarray); i++ {
-      str = str + "  "+ strconv.Itoa(intarray[i]) + "  "
+func format_result(snp []isc.SNP) string{
+   var network bytes.Buffer
+   enc := gob.NewEncoder(&network)
+   _ = enc.Encode(snp)
+   return string(network.Bytes())
+}
+
+func GenerateReads(read1 string, read2 string) isc.ReadInfo {
+   read_info := isc.ReadInfo{}
+
+   if len(read1) > 0 && len(read2) > 0 {
+      read_info.AssignReads([]byte(read1), []byte(read2))
+      read_info.CalcRevComp()
    }
-   return []byte(str)
+   return read_info
 }
 
 func (m *MyWorker) ProcessQuery(query string, i int) string {
    fmt.Println(i)
    var items []string
-   fmt.Println(query)
    items = strings.Split(query, ":")
+   fmt.Println(items)
 
-   read_info := isc.ReadInfo{}
-   read_info.Read1          = []byte(items[0])
-   read_info.Read2          = []byte(items[1])
-   read_info.Rev_read1      = []byte(items[2])
-   read_info.Rev_read2      = []byte(items[3])
-   read_info.Rev_comp_read1 = []byte(items[4])
-   read_info.Rev_comp_read2 = []byte(items[5])
-   read_info.Comp_read1     = []byte(items[6])
-   read_info.Comp_read2     = []byte(items[7]) 
-   read_info.Read_info_1    = []byte(items[8]) 
-   read_info.Read_info_2    = []byte(items[9])
-   read_info.Qual_info_1    = []byte(items[10])
-   read_info.Qual_info_2    = []byte(items[11])
-   read_info.Read_len,_     = strconv.Atoi(items[12])
-   fmt.Println("items",items)
+   read_info := GenerateReads(items[0], items[1])
    SNPs := (m.snpcaller).FindSNP(read_info, m.align_info[i], m.match_pos[i])
    if len(SNPs) > 0 {
       fmt.Println(SNPs)
-      return string(query)
+      return string(format_result(SNPs))
+      // return string(query)
    }
+   fmt.Println("return empty")
    return "empty"
 }
 
@@ -105,10 +104,7 @@ func (m *MyWorker) New(input_file string) disq.Worker {
    }
 
    var snpcaller isc.SNPProf
-   fmt.Println("input_info: ", input_info)
-   fmt.Println("para_info: ", para_info)
    snpcaller.Init(input_info, para_info)
-   fmt.Println("SNPcaller SNP_Prof1",snpcaller.SNP_Prof)
 
    w := new(MyWorker)
    w.snpcaller = &snpcaller

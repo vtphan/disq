@@ -5,32 +5,33 @@ import (
 	"flag"
 	"fmt"
 	"github.com/namsyvo/ISC"
-	"log"
 	"os"
 	"runtime"
 	"sync"
-	"time"
 	"path"
 	"github.com/vtphan/disq"
 	"strconv"
+    "encoding/gob"
+    "bytes"
 )
 
-type Collector struct {}
+type Collector struct {
+	results chan []isc.SNP
+}
 
 func (c *Collector) ProcessResult(qid int, result string) {
-   fmt.Println("Client::ProcessResult	", qid, "	", result)
+	var SNPs []isc.SNP
+	decOCC := gob.NewDecoder(bytes.NewBuffer([]byte(result)))
+	_ = decOCC.Decode(&SNPs)
+
+    fmt.Println("Client::ProcessResult	", qid, SNPs)
+    c.results <- SNPs
 }
 
 func main() {
 	fmt.Println("ISC - Integrated SNP Calling based on Read-Multigenome Alignment")
 
-	memstats := new(runtime.MemStats)
-	runtime.ReadMemStats(memstats)
-	log.Printf("ISC: memstats:\tmemstats.Alloc\tmemstats.TotalAlloc\tmemstats.Sys\tmemstats.HeapAlloc\tmemstats.HeapSys")
-	log.Printf("ISC: memstats at the beginning:\t%d\t%d\t%d\t%d\t%d", memstats.Alloc, memstats.TotalAlloc, memstats.Sys, memstats.HeapAlloc, memstats.HeapSys)
-
 	fmt.Println("Initializing indexes and parameters...")
-	start_time := time.Now()
 
 	var configure_file = flag.String("c", "", "")
 	var genome_file = flag.String("g", "", "reference genome file")
@@ -71,7 +72,6 @@ func main() {
 		input_info.Proc_num = runtime.NumCPU()
 		input_info.Routine_num = runtime.NumCPU()
 	}
-	println("input_info.Proc_num, input_info.Routine_num: ", input_info.Proc_num, input_info.Routine_num)
 
 	para_info := isc.ParaInfo{}
 	para_info.Max_match = 32
@@ -81,38 +81,23 @@ func main() {
 	para_info.Read_len = *read_len
 
 	runtime.GOMAXPROCS(input_info.Proc_num)
-	fmt.Println("seq_err ", strconv.FormatFloat(*seq_err, 'f', 6, 64))
 
 	input_info2 := *genome_file+":"+*dbsnp_file+":"+*idx_dir+":"+*read_file_1+":"+*read_file_2+":"+*snp_call_file+":"+strconv.Itoa(*read_len)+":"+strconv.FormatFloat(*seq_err, 'f', 6, 64)+":"+strconv.Itoa(*search_mode)+":"+strconv.Itoa(*start_pos)+":"+strconv.Itoa(*search_step)+":"+strconv.Itoa(*proc_num)+":"+strconv.Itoa(*routine_num)
 	var snpcaller isc.SNPProf
 	snpcaller.Init(input_info, para_info)
     c := disq.NewClient(*configure_file)
 
-/*	align_info := make([]isc.AlignInfo, input_info.Routine_num)
-	for i := 0; i < input_info.Routine_num; i++ {
-		align_info[i].InitAlignInfo(*read_len)
-	}
-	match_pos := make([][]int, input_info.Routine_num)
-	for i := 0; i < input_info.Routine_num; i++ {
-		match_pos[i] = make([]int, isc.MAXIMUM_MATCH)
-	}*/
-
-	index_time := time.Since(start_time)
-	log.Printf("ISC: time for SNP caller init:\t%s", index_time)
-
-	runtime.ReadMemStats(memstats)
-	log.Printf("ISC: memstats after SNP caller init:\t%d\t%d\t%d\t%d\t%d", memstats.Alloc, memstats.TotalAlloc, memstats.Sys, memstats.HeapAlloc, memstats.HeapSys)
-
 	fmt.Println("Aligning reads to the mutigenome...")
-	start_time = time.Now()
 
 	// data := make(chan isc.ReadInfo, input_info.Routine_num)
 	data := make(chan disq.Query, input_info.Routine_num)
+
 	results := make(chan []isc.SNP)
 
-	go ReadReads(input_info, data)
+	go GetReads(*read_file_1, *read_file_2, data)
 
-    c.Start(input_info2, data, &Collector{})
+	collect := Collector{results}
+    c.Start(input_info2, data, &collect)
 
 	/*var wg sync.WaitGroup
 	for i := 0; i < input_info.Routine_num; i++ {
@@ -124,51 +109,29 @@ func main() {
 	}()
 */
 	//Collect SNPS from results channel and update SNPs
+	
+/*	fmt.Println("start")
 	snp_aligned_read_num := 0
 	var snp isc.SNP
-	for SNPs := range results {
+	for SNPs := range collect.results {
 		snp_aligned_read_num++
 		for _, snp = range SNPs {
 			snpcaller.SNP_Prof[snp.SNP_Idx] = append(snpcaller.SNP_Prof[snp.SNP_Idx], snp.SNP_Val)
 		}
 	}
-	fmt.Println("\tNumber of aligned reads: ", snp_aligned_read_num)
-
-	align_time := time.Since(start_time)
-	log.Printf("ISC: time for alignment:\t%s", align_time)
-
-	runtime.ReadMemStats(memstats)
-	log.Printf("ISC: memstats after alignment:\t%d\t%d\t%d\t%d\t%d", memstats.Alloc, memstats.TotalAlloc,
-		memstats.Sys, memstats.HeapAlloc, memstats.HeapSys)
 
 	fmt.Println("Calling SNPs from alignment results...")
 
-	start_time = time.Now()
 	snpcaller.CallSNP(input_info.Routine_num)
-	callsnp_time := time.Since(start_time)
-	log.Printf("ISC: time for calling SNPs:\t%s", callsnp_time)
-
-	start_time = time.Now()
 	snpcaller.SNPCall_tofile(input_info.SNP_call_file)
-	writetofile_time := time.Since(start_time)
-	log.Printf("ISC: time for writing SNPs to file:\t%s", writetofile_time)
 
-	runtime.ReadMemStats(memstats)
-	log.Printf("ISC: memstats after snp call:\t%d\t%d\t%d\t%d\t%d", memstats.Alloc, memstats.TotalAlloc,
-		memstats.Sys, memstats.HeapAlloc, memstats.HeapSys)
-
-	fmt.Println("Finish, check the file", input_info.SNP_call_file, "for results")
+	fmt.Println("Finish, check the file", input_info.SNP_call_file, "for results")*/
 }
 
 //--------------------------------------------------------------------------------------------------
 //Read input FASTQ files and put data into data channel
 //--------------------------------------------------------------------------------------------------
-func ReadReads(input_info isc.InputInfo, data chan disq.Query) {
-	memstats := new(runtime.MemStats)
-
-	read_info := isc.ReadInfo{}
-
-	fn1, fn2 := input_info.Read_file_1, input_info.Read_file_2
+func GetReads(fn1 string, fn2 string, data chan disq.Query) {
 	f1, err_f1 := os.Open(fn1)
 	if err_f1 != nil {
 		panic("Error opening input read file " + fn1)
@@ -180,11 +143,10 @@ func ReadReads(input_info isc.InputInfo, data chan disq.Query) {
 	}
 	defer f2.Close()
 
-	var read_num int = 0
-	var line_f1, line_f2 []byte
 	scanner1 := bufio.NewScanner(f1)
 	scanner2 := bufio.NewScanner(f2)
 	count := 0
+	var line_f1, line_f2 []byte
 	for scanner1.Scan() && scanner2.Scan() {
 		//ignore 1st lines in input FASTQ files
 		scanner1.Scan() //use 2nd line in input FASTQ file 1
@@ -192,25 +154,17 @@ func ReadReads(input_info isc.InputInfo, data chan disq.Query) {
 		line_f1 = scanner1.Bytes()
 		line_f2 = scanner2.Bytes()
 		if len(line_f1) > 0 && len(line_f2) > 0 {
-			read_num++
-			read_info.AssignReads(line_f1, line_f2)
-			read_info.CalcRevComp()
-			read_info2 := string(read_info.Read1)+":"+string(read_info.Read2)+":"+string(read_info.Rev_read1)+":"+string(read_info.Rev_read2)+":"+string(read_info.Rev_comp_read1)+":"+string(read_info.Rev_comp_read2)+":"+string(read_info.Comp_read1)+":"+string(read_info.Comp_read2)+":"+string(read_info.Read_info_1)+":"+string(read_info.Read_info_2)+":"+string(read_info.Qual_info_1)+":"+string(read_info.Qual_info_2)+":"+strconv.Itoa(read_info.Read_len)
+			read_info2 := string(line_f1)+":"+string(line_f2)
 			query := disq.Query{count, read_info2}
 			data <- query
 			count++
 		}
-		//pprof.WriteHeapProfile(f)
-		if read_num%10000 == 0 {
-			runtime.ReadMemStats(memstats)
-			log.Printf("isc.go: memstats after aligning each 10,000 reads:\t%d\t%d\t%d\t%d\t%d", memstats.Alloc, memstats.TotalAlloc, memstats.Sys, memstats.HeapAlloc, memstats.HeapSys)
-		}
+
 		scanner1.Scan() //ignore 3rd line in 1st input FASTQ file 1
 		scanner2.Scan() //ignore 3rd line in 2nd input FASTQ file 2
 		scanner1.Scan() //ignore 4th line in 1st input FASTQ file 1
 		scanner2.Scan() //ignore 4th line in 2nd input FASTQ file 2
 	}
-	fmt.Println("\tNumber of inout reads: ", read_num)
 	close(data)
 }
 
