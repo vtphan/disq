@@ -7,7 +7,6 @@ import (
 	"github.com/namsyvo/ISC"
 	"os"
 	"runtime"
-	"sync"
 	"path"
 	"github.com/vtphan/disq"
 	"strconv"
@@ -26,6 +25,7 @@ func (c *Collector) ProcessResult(qid int, result string) {
 
     fmt.Println("Client::ProcessResult	", qid, SNPs)
     c.results <- SNPs
+    fmt.Println("finish ProcessResult")
 }
 
 func main() {
@@ -92,7 +92,7 @@ func main() {
 	// data := make(chan isc.ReadInfo, input_info.Routine_num)
 	data := make(chan disq.Query, input_info.Routine_num)
 
-	results := make(chan []isc.SNP)
+	results := make(chan []isc.SNP, 100)
 
 	go GetReads(*read_file_1, *read_file_2, data)
 
@@ -166,21 +166,4 @@ func GetReads(fn1 string, fn2 string, data chan disq.Query) {
 		scanner2.Scan() //ignore 4th line in 2nd input FASTQ file 2
 	}
 	close(data)
-}
-
-//--------------------------------------------------------------------------------------------------
-//Take data from data channel, process them (find SNPs) and put results (SNPs) into results channel
-//--------------------------------------------------------------------------------------------------
-func ProcessReads(snpcaller *isc.SNPProf, data chan isc.ReadInfo, results chan []isc.SNP,
-	wg *sync.WaitGroup, align_info isc.AlignInfo, match_pos []int) {
-	wg.Add(1)
-	defer wg.Done()
-	var read_info isc.ReadInfo
-	var SNPs []isc.SNP
-	for read_info = range data {
-		SNPs = (*snpcaller).FindSNP(read_info, align_info, match_pos)
-		if len(SNPs) > 0 {
-			results <- SNPs
-		}
-	}
 }

@@ -49,7 +49,6 @@ func (m *MyWorker) ProcessQuery(query string, i int) string {
    if len(SNPs) > 0 {
       fmt.Println(SNPs)
       return string(format_result(SNPs))
-      // return string(query)
    }
    fmt.Println("return empty")
    return "empty"
