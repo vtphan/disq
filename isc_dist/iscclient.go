@@ -12,6 +12,7 @@ import (
 	"strconv"
     "encoding/gob"
     "bytes"
+    "sync"
 )
 
 type Collector struct {
@@ -92,40 +93,36 @@ func main() {
 	// data := make(chan isc.ReadInfo, input_info.Routine_num)
 	data := make(chan disq.Query, input_info.Routine_num)
 
-	results := make(chan []isc.SNP, 100)
+	results := make(chan []isc.SNP)
 
 	go GetReads(*read_file_1, *read_file_2, data)
 
 	collect := Collector{results}
-    c.Start(input_info2, data, &collect)
+	var wg sync.WaitGroup
+	wg.Add(1)
+    go c.Start(input_info2, data, &collect, &wg)
 
-	/*var wg sync.WaitGroup
-	for i := 0; i < input_info.Routine_num; i++ {
-		go ProcessReads(&snpcaller, data, results, &wg, align_info[i], match_pos[i])
-	}
 	go func() {
 		wg.Wait()
 		close(results)
 	}()
-*/
 	//Collect SNPS from results channel and update SNPs
-	
-/*	fmt.Println("start")
+	fmt.Println("start")
 	snp_aligned_read_num := 0
 	var snp isc.SNP
 	for SNPs := range collect.results {
 		snp_aligned_read_num++
+		fmt.Println("looop1")
 		for _, snp = range SNPs {
 			snpcaller.SNP_Prof[snp.SNP_Idx] = append(snpcaller.SNP_Prof[snp.SNP_Idx], snp.SNP_Val)
 		}
 	}
-
 	fmt.Println("Calling SNPs from alignment results...")
 
 	snpcaller.CallSNP(input_info.Routine_num)
 	snpcaller.SNPCall_tofile(input_info.SNP_call_file)
 
-	fmt.Println("Finish, check the file", input_info.SNP_call_file, "for results")*/
+	fmt.Println("Finish, check the file", input_info.SNP_call_file, "for results")
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -165,5 +162,6 @@ func GetReads(fn1 string, fn2 string, data chan disq.Query) {
 		scanner1.Scan() //ignore 4th line in 1st input FASTQ file 1
 		scanner2.Scan() //ignore 4th line in 2nd input FASTQ file 2
 	}
+	fmt.Println("close data")
 	close(data)
 }

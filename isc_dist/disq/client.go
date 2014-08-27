@@ -37,19 +37,21 @@ func NewClient(config_file string) *Client {
    return c
 }
 
-func (c *Client) Start(index_file string, query_file chan Query, collector CollectorInterface) {
+func (c *Client) Start(index_file string, queries chan Query, collector CollectorInterface, wg2 *sync.WaitGroup) {
+   defer wg2.Done()
    c.collector = collector
 
    // Connect and distribute queries
    c.connect(index_file)
+
    if c.mode == "1" {
-      go func(qfile chan Query) {
-         c.distribute_queries(qfile)
-      }(query_file)
+      go func(queries chan Query) {
+         c.distribute_queries(queries)
+      }(queries)
    } else {
-      go func(qfile chan Query) {
-         c.broadcast_queries(qfile)
-      }(query_file)
+      go func(queries chan Query) {
+         c.broadcast_queries(queries)
+      }(queries)
    }
 
    // Collect and process results
@@ -59,12 +61,15 @@ func (c *Client) Start(index_file string, query_file chan Query, collector Colle
    for r := range(results) {
       items := strings.SplitN(r, " ", 2)
       qid, err := strconv.Atoi(items[0])
+      fmt.Println(qid)
       if err != nil {
          log.Fatalln("Missing query id", items)
       }
       res := items[1]
       c.collector.ProcessResult(qid, res)
    }
+         fmt.Println("end scan")
+
 }
 
 func (c *Client) collect_results(results chan string) {
@@ -94,10 +99,10 @@ func (c *Client) collect_results(results chan string) {
             return 0, nil, nil
          }
          scanner.Split(split)
+
          for scanner.Scan() {
             results <- scanner.Text()
          }
-         conn.Close()
       }(node.conn)
    }
 }
@@ -130,6 +135,8 @@ func (c *Client) connect(index_file string) {
 func (c *Client) distribute_queries(queries chan Query) {
    for query := range queries {
       for _, node := range(c.nodes) {
+         fmt.Println("addr", node.addr)
+         fmt.Println(query.Query_id)
          fmt.Fprintf(node.conn,"query %d %s\n",query.Query_id, query.Query_co)
       }
    }
@@ -142,11 +149,15 @@ func (c *Client) distribute_queries(queries chan Query) {
 func (c *Client) broadcast_queries(queries chan Query) {
    for _, node := range(c.nodes) {
       for query := range queries {
+         fmt.Println("addr", node.addr)
+         fmt.Println(query.Query_id)
          fmt.Fprintf(node.conn,"query %d %s\n", query.Query_id, query.Query_co)
       }
    }
 
+   fmt.Println("out of lpp")
    for _, node := range(c.nodes) {
+      fmt.Println("send done")
       fmt.Fprintf(node.conn, "done\n")
    }
 }

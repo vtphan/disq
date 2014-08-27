@@ -39,7 +39,6 @@ func GenerateReads(read1 string, read2 string) isc.ReadInfo {
 }
 
 func (m *MyWorker) ProcessQuery(query string, i int) string {
-   fmt.Println(i)
    var items []string
    items = strings.Split(query, ":")
    fmt.Println(items)
